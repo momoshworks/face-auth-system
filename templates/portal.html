@@ -1,0 +1,688 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>مساحة العمل المحلية | الشات وتخزين الملفات</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Cairo:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+    <style>
+        body { font-family: 'Cairo', sans-serif; }
+        ::-webkit-scrollbar { width: 6px; height: 6px; }
+        ::-webkit-scrollbar-track { background: #0f172a; }
+        ::-webkit-scrollbar-thumb { background: #334155; border-radius: 4px; }
+        ::-webkit-scrollbar-thumb:hover { background: #475569; }
+    </style>
+</head>
+<body class="bg-slate-950 text-slate-100 min-h-screen flex flex-col">
+
+    <!-- Top Navigation Header -->
+    <header class="border-b border-slate-800 bg-slate-900/90 backdrop-blur sticky top-0 z-50">
+        <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 h-16 flex items-center justify-between">
+            <div class="flex items-center gap-3">
+                <div class="w-10 h-10 rounded-xl bg-gradient-to-tr from-emerald-500 via-teal-500 to-indigo-600 flex items-center justify-center text-white shadow-lg shadow-emerald-500/20">
+                    <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 11H5m14 0a2 2 0 012 2v6a2 2 0 01-2 2H5a2 2 0 01-2-2v-6a2 2 0 012-2m14 0V9a2 2 0 00-2-2M5 11V9a2 2 0 012-2m0 0V5a2 2 0 012-2h6a2 2 0 012 2v2M7 7h10" />
+                    </svg>
+                </div>
+                <div>
+                    <h1 class="text-base font-extrabold text-white flex items-center gap-2">
+                        البوابة المركزية ومساحة العمل المشتركة
+                        <span class="text-[10px] px-2 py-0.5 rounded-full bg-emerald-500/20 text-emerald-400 border border-emerald-500/30">جلسة محمية بالوجه</span>
+                    </h1>
+                    <p class="text-xs text-slate-400">شات محلي مباشر • سحابة تخزين ومشاركة الملفات للشبكة</p>
+                </div>
+            </div>
+
+            <!-- LAN IP & User Profile -->
+            <div class="flex items-center gap-3 sm:gap-4">
+                <!-- Local LAN Link Badge with 1-Click Copy -->
+                <button onclick="copyLanUrl()" title="انقر لنسخ الرابط ومشاركته مع أعضاء الشبكة على نفس الراوتر" class="hidden md:flex items-center gap-2 bg-slate-800/90 hover:bg-slate-700/80 border border-slate-700 px-3 py-1.5 rounded-xl transition text-xs group">
+                    <span class="w-2 h-2 rounded-full bg-emerald-400 animate-ping"></span>
+                    <span class="text-slate-400">رابط الشبكة:</span>
+                    <span id="lanUrlText" class="font-mono font-bold text-indigo-400 group-hover:text-indigo-300">http://{{ local_ip }}:8000</span>
+                    <svg class="w-3.5 h-3.5 text-slate-400 group-hover:text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z"/></svg>
+                </button>
+
+                <!-- Profile Info -->
+                <div class="flex items-center gap-3 bg-slate-800/80 border border-slate-700/60 rounded-full py-1.5 px-3">
+                    <img src="{{ user.photo_url }}" alt="{{ user.name }}" class="w-8 h-8 rounded-full object-cover ring-2 ring-emerald-400">
+                    <div class="text-right">
+                        <p class="text-xs font-bold text-white leading-tight">{{ user.name }}</p>
+                        <p class="text-[10px] text-emerald-400 font-semibold">{{ user.role }}</p>
+                    </div>
+                </div>
+
+                <!-- Return to Camera & Logout -->
+                <a href="/" class="p-2 bg-slate-800 hover:bg-slate-700 text-slate-300 rounded-xl border border-slate-700 text-xs transition flex items-center gap-1.5" title="الرجوع للكاميرا">
+                    <svg class="w-4 h-4 text-indigo-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 9a2 2 0 012-2h.93a2 2 0 001.664-.89l.812-1.22A2 2 0 0110.07 4h3.86a2 2 0 011.664.89l.812 1.22A2 2 0 0018.07 7H19a2 2 0 012 2v9a2 2 0 01-2 2H5a2 2 0 01-2-2V9z"/><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 13a3 3 0 11-6 0 3 3 0 016 0z"/></svg>
+                </a>
+
+                <form action="/api/logout" method="POST" class="inline">
+                    <input type="hidden" name="token" value="{{ token }}">
+                    <button type="submit" class="p-2 bg-red-600/20 hover:bg-red-600/30 text-red-400 border border-red-500/30 rounded-xl transition text-xs" title="تسجيل الخروج">
+                        <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1"/></svg>
+                    </button>
+                </form>
+            </div>
+        </div>
+    </header>
+
+    <!-- Main Workspace Container -->
+    <main class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6 flex-1 w-full flex flex-col">
+        <!-- Navigation Tabs inside Portal -->
+        <div class="flex border-b border-slate-800 gap-2 mb-6 overflow-x-auto pb-1">
+            <button onclick="switchPortalTab('chat')" id="portalTabBtn-chat" class="portal-tab-btn px-5 py-2.5 rounded-t-xl font-bold text-sm transition flex items-center gap-2 border-b-2 border-indigo-500 text-indigo-400 bg-indigo-500/10">
+                <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 12h.01M12 12h.01M16 12h.01M21 12c0 4.418-4.03 8-9 8a9.863 9.863 0 01-4.255-.949L3 20l1.395-3.72C3.512 15.042 3 13.574 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z"/></svg>
+                💬 شات الشبكة المحلية (Local Chat)
+                <span id="unreadBadge" class="hidden px-1.5 py-0.2 rounded-full bg-red-500 text-[10px] text-white font-bold">جديد</span>
+            </button>
+
+            <button onclick="switchPortalTab('storage')" id="portalTabBtn-storage" class="portal-tab-btn px-5 py-2.5 rounded-t-xl font-semibold text-sm transition flex items-center gap-2 border-b-2 border-transparent text-slate-400 hover:text-slate-200 hover:bg-slate-900">
+                <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 8h14M5 8a2 2 0 110-4h14a2 2 0 110 4M5 8v10a2 2 0 002 2h10a2 2 0 002-2V8m-9 4h4"/></svg>
+                📁 سحابة الملفات المشتركة (File Vault)
+                <span id="filesCountBadge" class="text-[10px] px-2 py-0.5 rounded-full bg-slate-800 text-slate-400">{{ storage_stats.total_files }}</span>
+            </button>
+
+            <button onclick="switchPortalTab('members')" id="portalTabBtn-members" class="portal-tab-btn px-5 py-2.5 rounded-t-xl font-semibold text-sm transition flex items-center gap-2 border-b-2 border-transparent text-slate-400 hover:text-slate-200 hover:bg-slate-900">
+                <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4.354a4 4 0 110 5.292M15 21H3v-1a6 6 0 0112 0v1zm0 0h6v-1a6 6 0 00-9-5.197M13 7a4 4 0 11-8 0 4 4 0 018 0z"/></svg>
+                👥 أعضاء الشبكة المصرح لهم ({{ all_users|length }})
+            </button>
+        </div>
+
+        <!-- ==================== TAB 1: LOCAL TEAM CHAT ==================== -->
+        <div id="portalView-chat" class="portal-view flex-1 flex flex-col bg-slate-900/60 border border-slate-800 rounded-2xl overflow-hidden shadow-2xl h-[calc(100vh-190px)] min-h-[500px]">
+            <!-- Chat Top Info Bar -->
+            <div class="px-5 py-3 border-b border-slate-800 bg-slate-900/90 flex items-center justify-between">
+                <div class="flex items-center gap-2.5">
+                    <span id="wsStatusDot" class="w-2.5 h-2.5 rounded-full bg-emerald-400 animate-pulse"></span>
+                    <span class="text-xs font-bold text-white">غرفة المحادثة المباشرة للشبكة المحلية</span>
+                    <span class="text-[11px] text-slate-400 hidden sm:inline">• تواصل فوري بدون إنترنت خارجي</span>
+                </div>
+                <div class="flex items-center gap-2">
+                    <span class="text-xs px-2.5 py-1 rounded-full bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 font-bold flex items-center gap-1.5">
+                        <span class="w-2 h-2 rounded-full bg-emerald-400"></span>
+                        <span id="onlineCountText">1 متصل حالياً</span>
+                    </span>
+                </div>
+            </div>
+
+            <!-- Messages Stream Area -->
+            <div id="chatMessagesContainer" class="flex-1 overflow-y-auto p-4 sm:p-6 space-y-4">
+                <!-- Messages populated via JS and WebSocket -->
+                {% for msg in chat_messages %}
+                <div class="flex gap-3 items-start {% if msg.user_id == user.id %}flex-row-reverse{% endif %}">
+                    <img src="{{ msg.user_photo or '/static/placeholder.jpg' }}" class="w-9 h-9 rounded-xl object-cover ring-2 ring-slate-700 flex-shrink-0">
+                    <div class="max-w-[80%] sm:max-w-[70%] flex flex-col {% if msg.user_id == user.id %}items-end{% else %}items-start{% endif %}">
+                        <div class="flex items-center gap-2 mb-1 text-[11px]">
+                            <span class="font-bold {% if msg.user_id == user.id %}text-indigo-300{% else %}text-slate-300{% endif %}">{{ msg.user_name }}</span>
+                            <span class="text-[10px] px-1.5 py-0.2 rounded bg-slate-800 text-slate-400">{{ msg.user_role }}</span>
+                            <span class="text-[10px] text-slate-500 font-mono">{{ msg.timestamp }}</span>
+                        </div>
+                        <div class="p-3.5 rounded-2xl text-xs sm:text-sm leading-relaxed {% if msg.user_id == user.id %}bg-gradient-to-r from-indigo-600 to-indigo-700 text-white rounded-tr-none{% else %}bg-slate-800/90 text-slate-200 border border-slate-700/60 rounded-tl-none{% endif %} shadow-md">
+                            {{ msg.content }}
+                            {% if msg.attachment_url %}
+                            <div class="mt-2 pt-2 border-t border-white/20">
+                                {% if msg.attachment_url.endswith('.jpg') or msg.attachment_url.endswith('.png') or msg.attachment_url.endswith('.jpeg') or msg.attachment_url.endswith('.webp') %}
+                                <a href="{{ msg.attachment_url }}" target="_blank">
+                                    <img src="{{ msg.attachment_url }}" class="rounded-lg max-h-48 object-cover border border-white/10 hover:opacity-95 transition">
+                                </a>
+                                {% else %}
+                                <a href="{{ msg.attachment_url }}" target="_blank" class="flex items-center gap-2 text-xs bg-black/20 hover:bg-black/30 px-3 py-1.5 rounded-lg transition">
+                                    <span>📎 {{ msg.attachment_name or 'ملف مرفق' }}</span>
+                                    <span class="underline text-[10px]">تحميل</span>
+                                </a>
+                                {% endif %}
+                            </div>
+                            {% endif %}
+                        </div>
+                    </div>
+                </div>
+                {% endfor %}
+            </div>
+
+            <!-- Chat Bottom Input Bar -->
+            <div class="p-3 sm:p-4 bg-slate-900 border-t border-slate-800">
+                <form id="chatForm" onsubmit="handleSendChatMessage(event)" class="flex items-center gap-2">
+                    <!-- File Attachment Button -->
+                    <label class="p-2.5 bg-slate-800 hover:bg-slate-700 text-slate-300 rounded-xl cursor-pointer border border-slate-700 transition flex items-center justify-center flex-shrink-0" title="إرفاق ملف أو صورة">
+                        <svg class="w-5 h-5 text-indigo-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15.172 7l-6.586 6.586a2 2 0 102.828 2.828l6.414-6.586a4 4 0 00-5.656-5.656l-6.415 6.585a6 6 0 108.486 8.486L20.5 13"/></svg>
+                        <input type="file" id="chatAttachmentInput" onchange="handleChatAttachmentSelect()" class="hidden">
+                    </label>
+
+                    <!-- Selected Attachment Badge -->
+                    <div id="attachmentPreviewChip" class="hidden items-center gap-1.5 bg-indigo-950/80 border border-indigo-500/40 px-2.5 py-1.5 rounded-xl text-xs text-indigo-300">
+                        <span id="attachmentFileName" class="max-w-[120px] truncate">file.pdf</span>
+                        <button type="button" onclick="clearChatAttachment()" class="text-indigo-400 hover:text-red-400 font-bold">×</button>
+                    </div>
+
+                    <!-- Text Input -->
+                    <input type="text" id="chatTextInput" autocomplete="off" placeholder="اكتب رسالتك لجميع الزملاء على الشبكة المحلية... (اضغط Enter للإرسال)" class="flex-1 px-4 py-2.5 bg-slate-800 border border-slate-700 rounded-xl text-sm text-white focus:outline-none focus:border-indigo-500 transition">
+
+                    <!-- Send Button -->
+                    <button type="submit" id="btnSendChat" class="px-5 py-2.5 bg-gradient-to-r from-indigo-600 to-blue-600 hover:from-indigo-500 hover:to-blue-500 text-white font-bold text-xs rounded-xl transition duration-200 shadow-lg shadow-indigo-600/30 flex items-center gap-1.5 flex-shrink-0">
+                        <span>إرسال</span>
+                        <svg class="w-4 h-4 transform rotate-180" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 19l9 2-9-18-9 18 9-2zm0 0v-8"/></svg>
+                    </button>
+                </form>
+            </div>
+        </div>
+
+        <!-- ==================== TAB 2: LOCAL CLOUD FILE STORAGE ==================== -->
+        <div id="portalView-storage" class="portal-view hidden space-y-6">
+            <!-- Storage Overview Stats -->
+            <div class="grid grid-cols-1 sm:grid-cols-3 gap-4">
+                <div class="bg-slate-900/60 border border-slate-800 rounded-2xl p-5">
+                    <div class="text-xs text-slate-400 mb-1">إجمالي الملفات المخزنة</div>
+                    <div id="statTotalFiles" class="text-2xl font-bold text-indigo-400">{{ storage_stats.total_files }} ملف</div>
+                    <p class="text-[11px] text-slate-500 mt-0.5">متاحة لجميع أعضاء الشبكة</p>
+                </div>
+
+                <div class="bg-slate-900/60 border border-slate-800 rounded-2xl p-5">
+                    <div class="text-xs text-slate-400 mb-1">المساحة المستخدمة</div>
+                    <div id="statTotalSize" class="text-2xl font-bold text-emerald-400">{{ storage_stats.size_formatted }}</div>
+                    <p class="text-[11px] text-slate-500 mt-0.5">تخزين آمن على السيرفر المحلي</p>
+                </div>
+
+                <div class="bg-slate-900/60 border border-slate-800 rounded-2xl p-5">
+                    <div class="text-xs text-slate-400 mb-1">إجمالي التحميلات</div>
+                    <div id="statTotalDownloads" class="text-2xl font-bold text-amber-400">{{ storage_stats.total_downloads }} عملية</div>
+                    <p class="text-[11px] text-slate-500 mt-0.5">معدل نقل بيانات عالي عبر LAN</p>
+                </div>
+            </div>
+
+            <!-- Upload Box -->
+            <div class="bg-slate-900/70 border border-slate-800 rounded-2xl p-6 shadow-xl">
+                <div class="flex items-center justify-between mb-4">
+                    <div>
+                        <h3 class="text-base font-bold text-white flex items-center gap-2">
+                            <span>📤 رفع ومشاركة ملف جديد على الشبكة المحلية</span>
+                        </h3>
+                        <p class="text-xs text-slate-400 mt-0.5">يمكن لأي عضو على الشبكة تحميل الملف فور رفعه بسرعة الواي فاي الكاملة</p>
+                    </div>
+                </div>
+
+                <!-- Drag & Drop Upload Container -->
+                <div id="dropZone" onclick="document.getElementById('fileUploadInput').click()" class="border-2 border-dashed border-slate-700 hover:border-indigo-500 bg-slate-800/40 hover:bg-slate-800/70 rounded-2xl p-8 text-center cursor-pointer transition group">
+                    <input type="file" id="fileUploadInput" onchange="handleFileUploadSelect(event)" class="hidden">
+                    <div class="w-14 h-14 bg-indigo-500/10 text-indigo-400 group-hover:scale-110 rounded-2xl flex items-center justify-center mx-auto mb-3 transition">
+                        <svg class="w-7 h-7" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12"/></svg>
+                    </div>
+                    <p class="text-sm font-bold text-slate-200 mb-1">اسحب الملف هنا أو انقر للاختيار من جهازك</p>
+                    <p class="text-xs text-slate-400">يدعم جميع صيغ الملفات (PDF, Word, Excel, صور, ZIP, فيديو, كود برمجيات)</p>
+                </div>
+
+                <!-- Upload Progress & Status -->
+                <div id="uploadProgressBox" class="hidden mt-4 p-4 rounded-xl bg-slate-800/90 border border-slate-700">
+                    <div class="flex items-center justify-between text-xs mb-2">
+                        <span id="uploadFileNameText" class="font-bold text-white">جاري الرفع...</span>
+                        <span id="uploadPercentText" class="font-mono text-indigo-400">0%</span>
+                    </div>
+                    <div class="w-full bg-slate-700 h-2 rounded-full overflow-hidden">
+                        <div id="uploadProgressBar" class="bg-indigo-500 h-full w-0 transition-all duration-200"></div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Shared Files List -->
+            <div class="bg-slate-900/70 border border-slate-800 rounded-2xl p-6 shadow-xl">
+                <div class="flex items-center justify-between mb-4">
+                    <h3 class="text-base font-bold text-white flex items-center gap-2">
+                        <span>📁 مستودع الملفات المشتركة</span>
+                    </h3>
+                    <button onclick="loadSharedFilesList()" class="text-xs px-3 py-1.5 bg-slate-800 hover:bg-slate-700 text-slate-300 rounded-lg border border-slate-700">
+                        🔄 تحديث القائمة
+                    </button>
+                </div>
+
+                <div class="overflow-x-auto rounded-xl border border-slate-800">
+                    <table class="w-full text-right text-xs">
+                        <thead class="bg-slate-800/80 text-slate-400 uppercase font-semibold">
+                            <tr>
+                                <th class="py-3 px-4">اسم الملف</th>
+                                <th class="py-3 px-4">النوع والحجم</th>
+                                <th class="py-3 px-4">المرسل</th>
+                                <th class="py-3 px-4">تاريخ الرفع</th>
+                                <th class="py-3 px-4 text-center">التحميلات</th>
+                                <th class="py-3 px-4 text-center">الإجراءات</th>
+                            </tr>
+                        </thead>
+                        <tbody id="filesTableBody" class="divide-y divide-slate-800">
+                            <!-- Populated dynamically -->
+                            {% for f in files %}
+                            <tr class="hover:bg-slate-800/40 transition">
+                                <td class="py-3 px-4 font-bold text-white flex items-center gap-2">
+                                    <span class="p-2 rounded-lg bg-indigo-500/10 text-indigo-400 font-mono text-[10px]">{{ f.file_type }}</span>
+                                    <span class="truncate max-w-[220px]">{{ f.filename }}</span>
+                                </td>
+                                <td class="py-3 px-4 font-mono text-slate-300">
+                                    {% if f.file_size < 1024 * 1024 %}
+                                    {{ (f.file_size / 1024)|round(1) }} KB
+                                    {% else %}
+                                    {{ (f.file_size / (1024 * 1024))|round(1) }} MB
+                                    {% endif %}
+                                </td>
+                                <td class="py-3 px-4 text-slate-300">
+                                    <div class="flex items-center gap-2">
+                                        <img src="{{ f.uploaded_by_photo or '/static/placeholder.jpg' }}" class="w-5 h-5 rounded-full object-cover">
+                                        <span>{{ f.uploaded_by_name }}</span>
+                                    </div>
+                                </td>
+                                <td class="py-3 px-4 font-mono text-slate-400">{{ f.uploaded_at }}</td>
+                                <td class="py-3 px-4 text-center font-mono text-amber-400">{{ f.download_count }}</td>
+                                <td class="py-3 px-4 text-center">
+                                    <div class="flex items-center justify-center gap-2">
+                                        <a href="/api/files/{{ f.id }}/download" class="px-2.5 py-1.5 bg-indigo-600 hover:bg-indigo-500 text-white rounded-lg text-xs font-bold transition flex items-center gap-1">
+                                            <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4"/></svg>
+                                            تحميل
+                                        </a>
+                                        {% if f.uploaded_by_id == user.id or 'admin' in user.role|lower or 'مدير' in user.role %}
+                                        <button onclick="handleDeleteFile({{ f.id }}, '{{ f.filename }}')" class="p-1.5 bg-red-600/20 hover:bg-red-600/30 text-red-400 border border-red-500/30 rounded-lg transition" title="حذف الملف">
+                                            <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"/></svg>
+                                        </button>
+                                        {% endif %}
+                                    </div>
+                                </td>
+                            </tr>
+                            {% else %}
+                            <tr id="emptyFilesRow">
+                                <td colspan="6" class="py-8 text-center text-slate-500">لا توجد ملفات مرفوعة بعد. اسحب ملفاً في المربع بالأعلى لمشاركته.</td>
+                            </tr>
+                            {% endfor %}
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+
+        <!-- ==================== TAB 3: NETWORK MEMBERS ==================== -->
+        <div id="portalView-members" class="portal-view hidden space-y-6">
+            <div class="bg-slate-900/70 border border-slate-800 rounded-2xl p-6 shadow-xl">
+                <div class="flex items-center justify-between mb-5">
+                    <div>
+                        <h3 class="text-base font-bold text-white flex items-center gap-2">
+                            <span>👥 أعضاء الشبكة المحلية المصرح لهم بالدخول</span>
+                        </h3>
+                        <p class="text-xs text-slate-400 mt-0.5">الأعضاء الذين تم توثيق بصمات وجوههم ويمتلكون وصولاً للشات ومستودع الملفات</p>
+                    </div>
+                </div>
+
+                <div class="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-4">
+                    {% for u in all_users %}
+                    <div class="bg-slate-800/60 border border-slate-700/60 rounded-2xl p-4 flex items-center gap-3.5">
+                        <img src="{{ u.photo_path or '/static/placeholder.jpg' }}" class="w-14 h-14 rounded-2xl object-cover ring-2 ring-emerald-500/50">
+                        <div class="flex-1 min-w-0">
+                            <h4 class="text-sm font-bold text-white truncate">{{ u.name }}</h4>
+                            <p class="text-[11px] text-slate-400 truncate">{{ u.email }}</p>
+                            <div class="flex items-center gap-1.5 mt-1">
+                                <span class="text-[10px] px-2 py-0.5 rounded-full bg-slate-700 text-slate-300 font-semibold">{{ u.role }}</span>
+                                {% if u.has_access %}
+                                <span class="text-[9px] px-1.5 py-0.2 rounded-full bg-emerald-500/20 text-emerald-400 font-bold">مصرح</span>
+                                {% else %}
+                                <span class="text-[9px] px-1.5 py-0.2 rounded-full bg-red-500/20 text-red-400 font-bold">معطل</span>
+                                {% endif %}
+                            </div>
+                        </div>
+                    </div>
+                    {% endfor %}
+                </div>
+            </div>
+        </div>
+    </main>
+
+    <!-- Portal JavaScript for WebSocket Chat & File Uploads -->
+    <script>
+        const CURRENT_USER_ID = {{ user.id }};
+        const CURRENT_USER_NAME = "{{ user.name }}";
+        const CURRENT_USER_ROLE = "{{ user.role }}";
+        const CURRENT_USER_PHOTO = "{{ user.photo_url }}";
+        const SESSION_TOKEN = "{{ token }}";
+        const LOCAL_IP = "{{ local_ip }}";
+
+        let chatSocket = null;
+        let selectedChatFile = null;
+
+        // Switch Tabs in Portal
+        function switchPortalTab(tabId) {
+            document.querySelectorAll(".portal-view").forEach(el => el.classList.add("hidden"));
+            document.querySelectorAll(".portal-tab-btn").forEach(el => {
+                el.classList.remove("border-indigo-500", "text-indigo-400", "bg-indigo-500/10");
+                el.classList.add("border-transparent", "text-slate-400");
+            });
+
+            const targetView = document.getElementById(`portalView-${tabId}`);
+            const targetBtn = document.getElementById(`portalTabBtn-${tabId}`);
+            if (targetView) targetView.classList.remove("hidden");
+            if (targetBtn) {
+                targetBtn.classList.remove("border-transparent", "text-slate-400");
+                targetBtn.classList.add("border-indigo-500", "text-indigo-400", "bg-indigo-500/10");
+            }
+
+            if (tabId === "chat") {
+                scrollChatToBottom();
+                const badge = document.getElementById("unreadBadge");
+                if (badge) badge.classList.add("hidden");
+            }
+            if (tabId === "storage") {
+                loadSharedFilesList();
+            }
+        }
+
+        // Copy LAN URL to Clipboard
+        function copyLanUrl() {
+            const url = `${window.location.protocol}//${LOCAL_IP}:8000`;
+            navigator.clipboard.writeText(url).then(() => {
+                alert(`تم نسخ رابط الشبكة بنجاح:\n${url}\n\nيمكن لأي جهاز أو هاتف موبايل على نفس الواي فاي الدخول عبر هذا الرابط.`);
+            });
+        }
+
+        // Initialize WebSocket Chat
+        function initChatWebSocket() {
+            const protocol = window.location.protocol === "https:" ? "wss:" : "ws:";
+            const wsUrl = `${protocol}//${window.location.host}/ws/chat`;
+
+            chatSocket = new WebSocket(wsUrl);
+
+            chatSocket.onopen = () => {
+                const dot = document.getElementById("wsStatusDot");
+                if (dot) dot.className = "w-2.5 h-2.5 rounded-full bg-emerald-400 animate-pulse";
+            };
+
+            chatSocket.onmessage = (event) => {
+                try {
+                    const data = JSON.parse(event.data);
+                    if (data.type === "new_message") {
+                        appendChatMessage(data.message);
+                    } else if (data.type === "online_update") {
+                        const cnt = document.getElementById("onlineCountText");
+                        if (cnt) cnt.innerText = `${data.online_count} متصل حالياً`;
+                    }
+                } catch (e) {
+                    console.error("WS error:", e);
+                }
+            };
+
+            chatSocket.onclose = () => {
+                const dot = document.getElementById("wsStatusDot");
+                if (dot) dot.className = "w-2.5 h-2.5 rounded-full bg-amber-400";
+                // Reconnect after 3s
+                setTimeout(initChatWebSocket, 3000);
+            };
+        }
+
+        // Append message to chat container
+        function appendChatMessage(msg) {
+            const container = document.getElementById("chatMessagesContainer");
+            if (!container) return;
+
+            const isMe = msg.user_id === CURRENT_USER_ID;
+            const bubble = document.createElement("div");
+            bubble.className = `flex gap-3 items-start ${isMe ? 'flex-row-reverse' : ''}`;
+
+            let attachmentHtml = "";
+            if (msg.attachment_url) {
+                const url = msg.attachment_url;
+                const isImg = url.endsWith('.jpg') || url.endsWith('.png') || url.endsWith('.jpeg') || url.endsWith('.webp');
+                if (isImg) {
+                    attachmentHtml = `
+                        <div class="mt-2 pt-2 border-t border-white/20">
+                            <a href="${url}" target="_blank">
+                                <img src="${url}" class="rounded-lg max-h-48 object-cover border border-white/10 hover:opacity-95 transition">
+                            </a>
+                        </div>
+                    `;
+                } else {
+                    attachmentHtml = `
+                        <div class="mt-2 pt-2 border-t border-white/20">
+                            <a href="${url}" target="_blank" class="flex items-center gap-2 text-xs bg-black/20 hover:bg-black/30 px-3 py-1.5 rounded-lg transition">
+                                <span>📎 ${msg.attachment_name || 'ملف مرفق'}</span>
+                                <span class="underline text-[10px]">تحميل</span>
+                            </a>
+                        </div>
+                    `;
+                }
+            }
+
+            bubble.innerHTML = `
+                <img src="${msg.user_photo || '/static/placeholder.jpg'}" class="w-9 h-9 rounded-xl object-cover ring-2 ring-slate-700 flex-shrink-0">
+                <div class="max-w-[80%] sm:max-w-[70%] flex flex-col ${isMe ? 'items-end' : 'items-start'}">
+                    <div class="flex items-center gap-2 mb-1 text-[11px]">
+                        <span class="font-bold ${isMe ? 'text-indigo-300' : 'text-slate-300'}">${msg.user_name}</span>
+                        <span class="text-[10px] px-1.5 py-0.2 rounded bg-slate-800 text-slate-400">${msg.user_role}</span>
+                        <span class="text-[10px] text-slate-500 font-mono">${msg.timestamp}</span>
+                    </div>
+                    <div class="p-3.5 rounded-2xl text-xs sm:text-sm leading-relaxed ${isMe ? 'bg-gradient-to-r from-indigo-600 to-indigo-700 text-white rounded-tr-none' : 'bg-slate-800/90 text-slate-200 border border-slate-700/60 rounded-tl-none'} shadow-md">
+                        ${msg.content}
+                        ${attachmentHtml}
+                    </div>
+                </div>
+            `;
+
+            container.appendChild(bubble);
+            scrollChatToBottom();
+        }
+
+        function scrollChatToBottom() {
+            const container = document.getElementById("chatMessagesContainer");
+            if (container) {
+                container.scrollTop = container.scrollHeight;
+            }
+        }
+
+        // Handle Chat File Attachment Select
+        function handleChatAttachmentSelect() {
+            const input = document.getElementById("chatAttachmentInput");
+            if (input.files && input.files[0]) {
+                selectedChatFile = input.files[0];
+                document.getElementById("attachmentFileName").innerText = selectedChatFile.name;
+                document.getElementById("attachmentPreviewChip").classList.remove("hidden");
+                document.getElementById("attachmentPreviewChip").classList.add("flex");
+            }
+        }
+
+        function clearChatAttachment() {
+            selectedChatFile = null;
+            document.getElementById("chatAttachmentInput").value = "";
+            document.getElementById("attachmentPreviewChip").classList.add("hidden");
+            document.getElementById("attachmentPreviewChip").classList.remove("flex");
+        }
+
+        // Send Chat Message
+        async function handleSendChatMessage(e) {
+            e.preventDefault();
+            const input = document.getElementById("chatTextInput");
+            const content = input.value.trim();
+
+            if (!content && !selectedChatFile) return;
+
+            // If file attached, send via HTTP Multipart
+            if (selectedChatFile) {
+                const formData = new FormData();
+                formData.append("content", content);
+                formData.append("attachment", selectedChatFile);
+                formData.append("token", SESSION_TOKEN);
+
+                input.value = "";
+                clearChatAttachment();
+
+                try {
+                    await fetch("/api/chat/send", { method: "POST", body: formData });
+                } catch (err) {
+                    console.error("Upload chat error:", err);
+                }
+            } else {
+                // Send fast via WebSocket
+                if (chatSocket && chatSocket.readyState === WebSocket.OPEN) {
+                    chatSocket.send(JSON.stringify({
+                        token: SESSION_TOKEN,
+                        content: content
+                    }));
+                    input.value = "";
+                }
+            }
+        }
+
+        // ==================== File Vault Functions ====================
+
+        async function loadSharedFilesList() {
+            try {
+                const res = await fetch("/api/files");
+                const data = await res.json();
+                renderFilesTable(data.files);
+                updateStorageStatsUI(data.stats);
+            } catch (e) {
+                console.error("Load files error:", e);
+            }
+        }
+
+        function renderFilesTable(files) {
+            const tbody = document.getElementById("filesTableBody");
+            if (!tbody) return;
+
+            if (!files || files.length === 0) {
+                tbody.innerHTML = `<tr><td colspan="6" class="py-8 text-center text-slate-500">لا توجد ملفات مرفوعة بعد. اسحب ملفاً في المربع بالأعلى لمشاركته.</td></tr>`;
+                return;
+            }
+
+            tbody.innerHTML = files.map(f => {
+                const sizeText = f.file_size < 1024 * 1024
+                    ? `${(f.file_size / 1024).toFixed(1)} KB`
+                    : `${(f.file_size / (1024 * 1024)).toFixed(1)} MB`;
+
+                const canDelete = f.uploaded_by_id === CURRENT_USER_ID || CURRENT_USER_ROLE.toLowerCase().includes("admin") || CURRENT_USER_ROLE.includes("مدير");
+
+                return `
+                    <tr class="hover:bg-slate-800/40 transition">
+                        <td class="py-3 px-4 font-bold text-white flex items-center gap-2">
+                            <span class="p-2 rounded-lg bg-indigo-500/10 text-indigo-400 font-mono text-[10px]">${f.file_type}</span>
+                            <span class="truncate max-w-[220px]">${f.filename}</span>
+                        </td>
+                        <td class="py-3 px-4 font-mono text-slate-300">${sizeText}</td>
+                        <td class="py-3 px-4 text-slate-300">
+                            <div class="flex items-center gap-2">
+                                <img src="${f.uploaded_by_photo || '/static/placeholder.jpg'}" class="w-5 h-5 rounded-full object-cover">
+                                <span>${f.uploaded_by_name}</span>
+                            </div>
+                        </td>
+                        <td class="py-3 px-4 font-mono text-slate-400">${f.uploaded_at}</td>
+                        <td class="py-3 px-4 text-center font-mono text-amber-400">${f.download_count}</td>
+                        <td class="py-3 px-4 text-center">
+                            <div class="flex items-center justify-center gap-2">
+                                <a href="/api/files/${f.id}/download" class="px-2.5 py-1.5 bg-indigo-600 hover:bg-indigo-500 text-white rounded-lg text-xs font-bold transition flex items-center gap-1">
+                                    <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4"/></svg>
+                                    تحميل
+                                </a>
+                                ${canDelete ? `
+                                <button onclick="handleDeleteFile(${f.id}, '${f.filename}')" class="p-1.5 bg-red-600/20 hover:bg-red-600/30 text-red-400 border border-red-500/30 rounded-lg transition" title="حذف الملف">
+                                    <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"/></svg>
+                                </button>
+                                ` : ''}
+                            </div>
+                        </td>
+                    </tr>
+                `;
+            }).join("");
+        }
+
+        function updateStorageStatsUI(stats) {
+            if (!stats) return;
+            const tf = document.getElementById("statTotalFiles");
+            const ts = document.getElementById("statTotalSize");
+            const td = document.getElementById("statTotalDownloads");
+            const badge = document.getElementById("filesCountBadge");
+            if (tf) tf.innerText = `${stats.total_files} ملف`;
+            if (ts) ts.innerText = stats.size_formatted;
+            if (td) td.innerText = `${stats.total_downloads} عملية`;
+            if (badge) badge.innerText = stats.total_files;
+        }
+
+        // File Upload Handler
+        async function handleFileUploadSelect(event) {
+            const file = event.target.files[0];
+            if (!file) return;
+
+            const progressBox = document.getElementById("uploadProgressBox");
+            const nameText = document.getElementById("uploadFileNameText");
+            const percentText = document.getElementById("uploadPercentText");
+            const bar = document.getElementById("uploadProgressBar");
+
+            progressBox.classList.remove("hidden");
+            nameText.innerText = `جاري رفع: ${file.name}`;
+            percentText.innerText = "جاري التحميل...";
+            bar.style.width = "40%";
+
+            const formData = new FormData();
+            formData.append("file", file);
+            formData.append("token", SESSION_TOKEN);
+
+            try {
+                const res = await fetch("/api/files/upload", {
+                    method: "POST",
+                    body: formData
+                });
+                const result = await res.json();
+                if (res.ok && result.success) {
+                    bar.style.width = "100%";
+                    percentText.innerText = "✅ اكتمل الرفع!";
+                    setTimeout(() => {
+                        progressBox.classList.add("hidden");
+                        bar.style.width = "0%";
+                    }, 1500);
+
+                    loadSharedFilesList();
+                } else {
+                    alert("فشل رفع الملف: " + (result.detail || "خطأ غير معروف"));
+                    progressBox.classList.add("hidden");
+                }
+            } catch (err) {
+                console.error("Upload error:", err);
+                alert("تعذر الاتصال بالخادم لرفع الملف.");
+                progressBox.classList.add("hidden");
+            } finally {
+                document.getElementById("fileUploadInput").value = "";
+            }
+        }
+
+        // Delete File
+        async function handleDeleteFile(fileId, filename) {
+            if (!confirm(`هل أنت متأكد من حذف الملف "${filename}" من سحابة التخزين؟`)) return;
+            try {
+                const res = await fetch(`/api/files/${fileId}?token=${SESSION_TOKEN}`, { method: "DELETE" });
+                if (res.ok) {
+                    loadSharedFilesList();
+                }
+            } catch (e) {
+                console.error(e);
+            }
+        }
+
+        // Drag & Drop Setup
+        const dropZone = document.getElementById("dropZone");
+        if (dropZone) {
+            ['dragenter', 'dragover', 'dragleave', 'drop'].forEach(eventName => {
+                dropZone.addEventListener(eventName, e => e.preventDefault(), false);
+            });
+            ['dragenter', 'dragover'].forEach(eventName => {
+                dropZone.addEventListener(eventName, () => dropZone.classList.add('border-indigo-400', 'bg-indigo-950/20'), false);
+            });
+            ['dragleave', 'drop'].forEach(eventName => {
+                dropZone.addEventListener(eventName, () => dropZone.classList.remove('border-indigo-400', 'bg-indigo-950/20'), false);
+            });
+            dropZone.addEventListener('drop', e => {
+                const dt = e.dataTransfer;
+                const files = dt.files;
+                if (files.length > 0) {
+                    document.getElementById('fileUploadInput').files = files;
+                    handleFileUploadSelect({ target: { files: files } });
+                }
+            });
+        }
+
+        // Init on DOM Load
+        window.addEventListener("DOMContentLoaded", () => {
+            initChatWebSocket();
+            scrollChatToBottom();
+        });
+    </script>
+</body>
+</html>

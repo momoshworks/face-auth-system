@@ -1,0 +1,39 @@
+# Byte-compiled / optimized / DLL files
+__pycache__/
+*.py[cod]
+*$py.class
+
+# SQLite Database & journals
+*.db
+*.db-journal
+*.db-wal
+*.db-shm
+
+# Log files
+*.log
+tunnel.log
+
+# Large Binaries / Tools
+cloudflared.exe
+*.exe
+
+# User Uploads and Shared Files (keep folder structure)
+uploads/*
+!uploads/.gitkeep
+
+storage/*
+!storage/.gitkeep
+
+# Environments
+.venv/
+venv/
+ENV/
+env/
+
+# Editor / IDE configurations
+.vscode/
+.idea/
+*.sublime-project
+*.sublime-workspace
+.DS_Store
+Thumbs.db
