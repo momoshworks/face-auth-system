@@ -1,19 +1,19 @@
 @echo off
-title Face Recognition, Local Team Chat & Mobile Live Camera System
+title AI FaceID Desktop Workstation Pro
 chcp 65001 >nul
 cd /d "%~dp0"
 echo =======================================================================
-echo    نظام التعرف على الوجه، الشات المباشر، سحابة الملفات ودعم الموبايل
-echo    Face Recognition, Local Team Chat, File Vault & Mobile Live Camera
+echo    محطة التعرف على الوجه الذكية والحضور البيومتري (Desktop Workstation)
+echo    AI Face Recognition, Anti-Spoofing & Biometric Attendance System
 echo =======================================================================
 echo.
-echo  [✓] جاري تشغيل خادم النظام المزدوج (HTTP للكمبيوتر + HTTPS للموبايل)...
+echo  [+] جاري تشغيل خادم المحطة الذكية على الكمبيوتر...
+echo  🌐 رابط النظام المباشر: http://localhost:8000
 echo.
-echo  🌐 رابط الكمبيوتر المباشر:            http://localhost:8000
-echo  📱 رابط الموبايل (لتشغيل الكاميرا لايف):  https://192.168.1.2:8443
-echo  🏠 رابط الشبكة العادي (LAN IP):         http://192.168.1.2:8000
+echo  [+] جاري فتح المتصفح تلقائياً...
+start http://localhost:8000
 echo.
-echo  اضغط Ctrl+C لإيقاف الخادم
+echo  اضغط Ctrl+C لإيقاف النظام
 echo =======================================================================
-python server.py
+python -m uvicorn main:app --host 127.0.0.1 --port 8000
 pause

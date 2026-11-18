@@ -1,15 +1,16 @@
-# PowerShell Runner for Dual HTTP/HTTPS Face Recognition System
+﻿# PowerShell Runner for AI FaceID Desktop Workstation Pro
 Write-Host "=======================================================================" -ForegroundColor Cyan
-Write-Host "   نظام التعرف على الوجه، الشات المباشر، سحابة الملفات ودعم الموبايل" -ForegroundColor Yellow
-Write-Host "   Face Recognition, Local Team Chat, File Vault & Mobile Live Camera" -ForegroundColor White
+Write-Host "   محطة التعرف على الوجه الذكية والحضور البيومتري للكمبيوتر" -ForegroundColor Yellow
+Write-Host "   AI FaceID Desktop Workstation Pro (Biometrics & Attendance)" -ForegroundColor White
 Write-Host "=======================================================================" -ForegroundColor Cyan
 Write-Host ""
-Write-Host "🌐 رابط الكمبيوتر المباشر:            http://localhost:8000" -ForegroundColor Green
-Write-Host "📱 رابط الموبايل (لتشغيل الكاميرا لايف):  https://192.168.1.2:8443" -ForegroundColor Yellow
-Write-Host "🏠 رابط الشبكة العادي (LAN IP):         http://192.168.1.2:8000" -ForegroundColor Gray
+Write-Host "🌐 رابط النظام المباشر: http://localhost:8000" -ForegroundColor Green
+Write-Host ""
+Write-Host "جاري تشغيل المتصفح التلقائي..." -ForegroundColor Gray
+Start-Process "http://localhost:8000"
 Write-Host ""
 Write-Host "اضغط Ctrl+C لإيقاف الخادم" -ForegroundColor Gray
 Write-Host ""
 
 Set-Location $PSScriptRoot
-python server.py
+python -m uvicorn main:app --host 127.0.0.1 --port 8000

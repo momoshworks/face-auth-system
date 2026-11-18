@@ -53,6 +53,12 @@
                     </div>
                 </div>
 
+                <!-- Auto-Lock Guard Toggle for Desktop Workstation -->
+                <label class="hidden lg:flex items-center gap-1.5 text-xs text-slate-300 bg-slate-800/80 hover:bg-slate-700/80 px-3 py-1.5 rounded-xl border border-slate-700 cursor-pointer transition" title="حماية محطة العمل: قفل الشاشة تلقائياً إذا تركت مقعدك لحماية الخصوصية">
+                    <input type="checkbox" id="workstationGuardToggle" onchange="toggleWorkstationGuard(this.checked)" class="rounded text-cyan-600 focus:ring-0 bg-slate-900 border-slate-700">
+                    <span class="text-[11px] font-semibold">🔒 قفل أمان عند الغياب</span>
+                </label>
+
                 <!-- Return to Camera & Logout -->
                 <a href="/" class="p-2 bg-slate-800 hover:bg-slate-700 text-slate-300 rounded-xl border border-slate-700 text-xs transition flex items-center gap-1.5" title="الرجوع للكاميرا">
                     <svg class="w-4 h-4 text-indigo-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 9a2 2 0 012-2h.93a2 2 0 001.664-.89l.812-1.22A2 2 0 0110.07 4h3.86a2 2 0 011.664.89l.812 1.22A2 2 0 0018.07 7H19a2 2 0 012 2v9a2 2 0 01-2 2H5a2 2 0 01-2-2V9z"/><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 13a3 3 0 11-6 0 3 3 0 016 0z"/></svg>
@@ -676,6 +682,66 @@
                     handleFileUploadSelect({ target: { files: files } });
                 }
             });
+        }
+
+        // Workstation Presence Guard & Auto-Lock on Absence
+        let guardInterval = null;
+        let guardVideo = null;
+
+        function toggleWorkstationGuard(enabled) {
+            if (enabled) {
+                if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+                    alert("الكاميرا غير متاحة لتفعيل فحص التواجد المستمر.");
+                    document.getElementById("workstationGuardToggle").checked = false;
+                    return;
+                }
+                startWorkstationGuard();
+            } else {
+                stopWorkstationGuard();
+            }
+        }
+
+        async function startWorkstationGuard() {
+            try {
+                if (!guardVideo) {
+                    guardVideo = document.createElement("video");
+                    guardVideo.autoplay = true;
+                    guardVideo.muted = true;
+                    guardVideo.playsInline = true;
+                    const stream = await navigator.mediaDevices.getUserMedia({ video: { width: 320, height: 240 } });
+                    guardVideo.srcObject = stream;
+                }
+                guardInterval = setInterval(async () => {
+                    if (!guardVideo || guardVideo.videoWidth === 0) return;
+                    const c = document.createElement("canvas");
+                    c.width = 320;
+                    c.height = 240;
+                    c.getContext("2d").drawImage(guardVideo, 0, 0, 320, 240);
+                    const b64 = c.toDataURL("image/jpeg", 0.7);
+                    try {
+                        const res = await fetch("/api/portal/presence-check", {
+                            method: "POST",
+                            headers: { "Content-Type": "application/json" },
+                            body: JSON.stringify({ token: SESSION_TOKEN, image: b64 })
+                        });
+                        const data = await res.json();
+                        if (data.should_lock) {
+                            alert("⚠️ تم قفل الشاشة تلقائياً: " + (data.message || "المستخدم غير متواجد أمام الشاشة لحماية الخصوصية"));
+                            window.location.href = "/";
+                        }
+                    } catch (e) {}
+                }, 10000);
+            } catch (e) {
+                console.log("Guard error:", e);
+            }
+        }
+
+        function stopWorkstationGuard() {
+            if (guardInterval) clearInterval(guardInterval);
+            if (guardVideo && guardVideo.srcObject) {
+                guardVideo.srcObject.getTracks().forEach(t => t.stop());
+                guardVideo = null;
+            }
         }
 
         // Init on DOM Load

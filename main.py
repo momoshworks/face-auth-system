@@ -7,7 +7,7 @@ import shutil
 from datetime import datetime
 from typing import Optional, List, Dict, Any
 from fastapi import FastAPI, Request, Form, HTTPException, Depends, WebSocket, WebSocketDisconnect, UploadFile, File
-from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse, FileResponse
+from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse, FileResponse, Response
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 from pydantic import BaseModel
@@ -35,7 +35,7 @@ app.mount("/storage", StaticFiles(directory=STORAGE_DIR), name="storage")
 templates = Jinja2Templates(directory=TEMPLATES_DIR)
 
 def get_local_ip() -> str:
-    """الحصول على عنوان IP المحلي للجهاز على شبكة الواي فاي / الشبكة المحلية"""
+    """الحصول على عنوان IP المحلي للجهاز على الشبكة"""
     try:
         s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
         s.connect(("8.8.8.8", 80))
@@ -44,30 +44,6 @@ def get_local_ip() -> str:
         return ip
     except Exception:
         return "127.0.0.1"
-
-def get_tunnel_url() -> Optional[str]:
-    """الحصول على رابط Cloudflare HTTPS التلقائي الآمن للموبايل"""
-    tunnel_log = os.path.join(BASE_DIR, "tunnel.log")
-    if os.path.exists(tunnel_log):
-        try:
-            with open(tunnel_log, "r", encoding="utf-8", errors="ignore") as f:
-                content = f.read()
-            matches = re.findall(r"https://[a-zA-Z0-9-]+\.trycloudflare\.com", content)
-            if matches:
-                return matches[-1]
-        except Exception:
-            pass
-
-    tunnel_file = os.path.join(BASE_DIR, "tunnel_url.txt")
-    if os.path.exists(tunnel_file):
-        try:
-            with open(tunnel_file, "r", encoding="utf-8", errors="ignore") as f:
-                url = f.read().strip()
-            if url.startswith("https://") and "trycloudflare.com" in url:
-                return url
-        except Exception:
-            pass
-    return None
 
 # مدير اتصالات الشات المباشر عبر WebSockets
 class ChatConnectionManager:
@@ -101,6 +77,10 @@ ACTIVE_SESSIONS = {}
 class FaceVerifyRequest(BaseModel):
     image: str  # Base64 data URL
 
+class PresenceCheckRequest(BaseModel):
+    token: str
+    image: str
+
 class RegisterRequest(BaseModel):
     name: str
     email: str
@@ -113,37 +93,29 @@ class RegisterRequest(BaseModel):
 @app.get("/api/network-info")
 async def get_network_info():
     local_ip = get_local_ip()
-    tunnel_url = get_tunnel_url()
-    mobile_https = f"https://{local_ip}:8443"
     return {
         "local_ip": local_ip,
-        "local_url": f"http://{local_ip}:8000",
-        "tunnel_url": tunnel_url,
-        "mobile_https_url": mobile_https,
-        "mobile_url": tunnel_url or mobile_https
+        "local_url": f"http://127.0.0.1:8000",
+        "app_mode": "Desktop Workstation"
     }
 
 @app.get("/", response_class=HTMLResponse)
 async def home_page(request: Request):
-    """الصفحة الرئيسية لنظام التعرف على الوجه"""
+    """الصفحة الرئيسية لنظام التعرف على الوجه المخصص للحاسوب"""
     users = db.get_all_users()
     logs = db.get_recent_logs(20)
-    local_ip = get_local_ip()
-    tunnel_url = get_tunnel_url()
-    mobile_https = f"https://{local_ip}:8443"
-    mobile_url = tunnel_url or mobile_https
+    attendance = db.get_daily_attendance()
+    present_today = sum(1 for a in attendance if a["is_present"])
     return templates.TemplateResponse(
         request=request,
         name="index.html",
         context={
             "users": users,
             "logs": logs,
+            "attendance": attendance,
             "total_users": len(users),
             "active_access_count": sum(1 for u in users if u["has_access"] == 1),
-            "local_ip": local_ip,
-            "tunnel_url": tunnel_url,
-            "mobile_https_url": mobile_https,
-            "mobile_url": mobile_url
+            "present_today": present_today
         }
     )
 
@@ -689,6 +661,76 @@ async def list_logs():
     """عرض سجلات محاولات الدخول"""
     return db.get_recent_logs(50)
 
+@app.get("/api/attendance")
+async def get_attendance(date: Optional[str] = None):
+    """جلب سجل الحضور والانصراف وساعات العمل لليوم"""
+    return db.get_daily_attendance(date)
+
+@app.get("/api/attendance/export")
+async def export_attendance(date: Optional[str] = None):
+    """تصدير تقرير الحضور والانصراف كملف CSV متوافق مع Excel والأحرف العربية"""
+    csv_data = db.export_attendance_csv(date)
+    curr_date = date or datetime.now().strftime("%Y-%m-%d")
+    filename = f"attendance_{curr_date}.csv"
+    return Response(
+        content=csv_data.encode("utf-8-sig"),
+        media_type="text/csv; charset=utf-8",
+        headers={"Content-Disposition": f'attachment; filename="{filename}"'}
+    )
+
+@app.get("/api/logs/export")
+async def export_logs():
+    """تصدير سجل الحركات والمحاولات بالكامل كملف CSV"""
+    csv_data = db.export_logs_csv()
+    filename = f"access_logs_{datetime.now().strftime('%Y%m%d_%H%M%S')}.csv"
+    return Response(
+        content=csv_data.encode("utf-8-sig"),
+        media_type="text/csv; charset=utf-8",
+        headers={"Content-Disposition": f'attachment; filename="{filename}"'}
+    )
+
+@app.post("/api/portal/presence-check")
+async def check_user_presence(data: PresenceCheckRequest):
+    """
+    فحص تواجد المستخدم المستمر أمام شاشة الكمبيوتر:
+    إذا ابتعد المستخدم عن الشاشة أو جلس شخص آخر أمامه، يتم تنبيه النظام أو قفله تلقائياً للحفاظ على الخصوصية.
+    """
+    user_info = ACTIVE_SESSIONS.get(data.token) or db.get_session_user(data.token)
+    if not user_info:
+        return JSONResponse(status_code=401, content={"status": "UNAUTHORIZED", "message": "انتهت الجلسة"})
+
+    img = engine.decode_base64_image(data.image)
+    if img is None:
+        return JSONResponse(status_code=400, content={"status": "ERROR", "message": "تعذر قراءة صورة الكاميرا"})
+
+    embedding, face_box, msg = engine.extract_face_embedding(img)
+    if embedding is None:
+        return JSONResponse(status_code=200, content={
+            "status": "ABSENT",
+            "message": "لم يتم رصد وجه أمام الشاشة",
+            "should_lock": True
+        })
+
+    # مقارنة الوجه بالمسجلين
+    registered_users = db.get_all_user_embeddings()
+    matched_user, best_score, conf_pct = engine.identify_face(embedding, registered_users)
+
+    if matched_user and matched_user["id"] == user_info["id"]:
+        return JSONResponse(status_code=200, content={
+            "status": "PRESENT",
+            "user_name": user_info["name"],
+            "confidence": conf_pct,
+            "face_box": face_box,
+            "should_lock": False
+        })
+    else:
+        return JSONResponse(status_code=200, content={
+            "status": "DIFFERENT_PERSON",
+            "message": "⚠️ تم رصد شخص غير مصرح له أمام الشاشة!",
+            "face_box": face_box,
+            "should_lock": True
+        })
+
 @app.post("/api/logout")
 async def logout(token: Optional[str] = Form(None)):
     """تسجيل الخروج وإنهاء جلسة الدخول ومسح الكوكيز"""
@@ -702,4 +744,4 @@ async def logout(token: Optional[str] = Form(None)):
 
 if __name__ == "__main__":
     import uvicorn
-    uvicorn.run("main:app", host="0.0.0.0", port=8000, reload=True)
+    uvicorn.run("main:app", host="127.0.0.1", port=8000, reload=True)

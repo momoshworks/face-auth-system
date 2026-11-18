@@ -1,4 +1,4 @@
-// Face Recognition & Access Control System Client JS
+// AI Face Recognition & Biometric Attendance Workstation - Client JS
 let videoElement = document.getElementById("webcam");
 let overlayCanvas = document.getElementById("overlayCanvas");
 let ctx = overlayCanvas ? overlayCanvas.getContext("2d") : null;
@@ -6,53 +6,90 @@ let currentStream = null;
 let autoScanInterval = null;
 let isScanning = false;
 let currentTab = "scan";
+let selectedCameraDeviceId = "";
+let voiceAssistantEnabled = true;
 
-// Audio Feedback using Web Audio API (No external sound files required)
+// Web Audio Synthesis (Synthesized Beeps & Alerts)
 const audioCtx = new (window.AudioContext || window.webkitAudioContext)();
 
-function playAccessGrantedSound() {
+function playTone(freq, type, duration, gainVal = 0.2) {
     try {
         const osc = audioCtx.createOscillator();
         const gain = audioCtx.createGain();
         osc.connect(gain);
         gain.connect(audioCtx.destination);
-        osc.type = "sine";
-        
-        // Happy ascending chime (two tones)
+        osc.type = type;
         const now = audioCtx.currentTime;
-        osc.frequency.setValueAtTime(587.33, now); // D5
-        osc.frequency.setValueAtTime(880, now + 0.15); // A5
-        gain.gain.setValueAtTime(0.2, now);
-        gain.gain.exponentialRampToValueAtTime(0.01, now + 0.4);
+        osc.frequency.setValueAtTime(freq, now);
+        gain.gain.setValueAtTime(gainVal, now);
+        gain.gain.exponentialRampToValueAtTime(0.001, now + duration);
         osc.start(now);
-        osc.stop(now + 0.4);
-    } catch (e) {
-        console.log("Audio play error", e);
-    }
+        osc.stop(now + duration);
+    } catch (e) {}
+}
+
+function playAccessGrantedSound() {
+    try {
+        playTone(587.33, "sine", 0.15, 0.2); // D5
+        setTimeout(() => playTone(880, "sine", 0.35, 0.25), 120); // A5
+    } catch (e) {}
 }
 
 function playAccessDeniedSound() {
     try {
-        const osc = audioCtx.createOscillator();
-        const gain = audioCtx.createGain();
-        osc.connect(gain);
-        gain.connect(audioCtx.destination);
-        osc.type = "sawtooth";
-        
-        // Low descending warning buzzer
-        const now = audioCtx.currentTime;
-        osc.frequency.setValueAtTime(220, now);
-        osc.frequency.setValueAtTime(160, now + 0.2);
-        gain.gain.setValueAtTime(0.25, now);
-        gain.gain.exponentialRampToValueAtTime(0.01, now + 0.45);
-        osc.start(now);
-        osc.stop(now + 0.45);
+        playTone(220, "sawtooth", 0.2, 0.25);
+        setTimeout(() => playTone(160, "sawtooth", 0.3, 0.3), 150);
+    } catch (e) {}
+}
+
+function playAngleCaptureBeep() {
+    try {
+        playTone(784, "sine", 0.12, 0.18); // G5
+    } catch (e) {}
+}
+
+// Arabic Voice Feedback using SpeechSynthesis
+function speakVoice(text) {
+    if (!voiceAssistantEnabled || !("speechSynthesis" in window)) return;
+    try {
+        window.speechSynthesis.cancel(); // Stop any pending speech
+        const utterance = new SpeechSynthesisUtterance(text);
+        utterance.lang = "ar-SA";
+        utterance.rate = 1.0;
+        utterance.pitch = 1.0;
+        window.speechSynthesis.speak(utterance);
     } catch (e) {
-        console.log("Audio play error", e);
+        console.log("Voice speech error:", e);
     }
 }
 
-let currentFacingMode = "user"; // 'user' (selfie) or 'environment' (rear)
+function toggleVoiceAudio() {
+    voiceAssistantEnabled = !voiceAssistantEnabled;
+    const icon = document.getElementById("voiceToggleIcon");
+    const label = document.getElementById("voiceToggleLabel");
+    if (voiceAssistantEnabled) {
+        if (icon) icon.innerText = "🔊";
+        if (label) label.innerText = "الصوت مفعل";
+        speakVoice("تم تفعيل المساعد الصوتي");
+    } else {
+        if (icon) icon.innerText = "🔇";
+        if (label) label.innerText = "الصوت مكتوم";
+        window.speechSynthesis.cancel();
+    }
+}
+
+// Fullscreen / Kiosk Toggle
+function toggleFullscreen() {
+    if (!document.fullscreenElement) {
+        document.documentElement.requestFullscreen().catch(err => {
+            console.log("Fullscreen request error:", err);
+        });
+    } else {
+        if (document.exitFullscreen) {
+            document.exitFullscreen();
+        }
+    }
+}
 
 // Visual screen flash on camera capture
 function triggerCameraFlash() {
@@ -66,16 +103,49 @@ function triggerCameraFlash() {
     }, 70);
 }
 
-// Initialize Camera with robust mobile support
+// Enumerate Desktop Webcams and fill dropdown
+async function populateWebcamDevices() {
+    const select = document.getElementById("cameraDeviceSelect");
+    if (!select || !navigator.mediaDevices || !navigator.mediaDevices.enumerateDevices) return;
+
+    try {
+        const devices = await navigator.mediaDevices.enumerateDevices();
+        const videoInputs = devices.filter(d => d.kind === "videoinput");
+
+        select.innerHTML = "";
+        if (videoInputs.length === 0) {
+            select.innerHTML = `<option value="">كاميرا النظام الافتراضية</option>`;
+            return;
+        }
+
+        videoInputs.forEach((device, index) => {
+            const opt = document.createElement("option");
+            opt.value = device.deviceId;
+            opt.innerText = device.label || `كاميرا رقم ${index + 1} (${device.deviceId.slice(0, 8)}...)`;
+            if (device.deviceId === selectedCameraDeviceId) {
+                opt.selected = true;
+            }
+            select.appendChild(opt);
+        });
+    } catch (err) {
+        console.log("Device enumeration error:", err);
+    }
+}
+
+async function changeCameraDevice(deviceId) {
+    selectedCameraDeviceId = deviceId;
+    await initCamera();
+}
+
+// Initialize Camera natively on Desktop PC
 async function initCamera() {
     const errorNotice = document.getElementById("camErrorNotice");
     if (errorNotice) errorNotice.classList.add("hidden");
 
     if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
-        console.warn("navigator.mediaDevices.getUserMedia is unavailable (insecure context or unsupported browser).");
         if (errorNotice) errorNotice.classList.remove("hidden");
         const statusText = document.getElementById("scanStatusText");
-        if (statusText) statusText.innerText = "الكاميرا غير مفعلة (يرجى فتح رابط HTTPS للموبايل)";
+        if (statusText) statusText.innerText = "الكاميرا غير مفعلة";
         return;
     }
 
@@ -85,31 +155,23 @@ async function initCamera() {
             currentStream = null;
         }
 
-        const isMobile = /iPhone|iPad|iPod|Android/i.test(navigator.userAgent);
+        const videoConstraints = {
+            width: { ideal: 640, max: 1280 },
+            height: { ideal: 480, max: 720 }
+        };
 
-        let stream = null;
-        try {
-            // First attempt with preferred facing mode and flexible dimensions
-            stream = await navigator.mediaDevices.getUserMedia({
-                video: {
-                    facingMode: currentFacingMode ? { ideal: currentFacingMode } : "user",
-                    width: isMobile ? { ideal: 480, max: 1280 } : { ideal: 640, max: 1280 },
-                    height: isMobile ? { ideal: 640, max: 720 } : { ideal: 480, max: 720 }
-                },
-                audio: false
-            });
-        } catch (constraintErr) {
-            console.warn("Specific constraints failed, falling back to basic video constraint:", constraintErr);
-            stream = await navigator.mediaDevices.getUserMedia({
-                video: true,
-                audio: false
-            });
+        if (selectedCameraDeviceId) {
+            videoConstraints.deviceId = { exact: selectedCameraDeviceId };
         }
+
+        const stream = await navigator.mediaDevices.getUserMedia({
+            video: videoConstraints,
+            audio: false
+        });
 
         currentStream = stream;
         videoElement.srcObject = stream;
         videoElement.setAttribute("playsinline", "true");
-        videoElement.setAttribute("webkit-playsinline", "true");
 
         try {
             await videoElement.play();
@@ -123,34 +185,17 @@ async function initCamera() {
             const badge = document.getElementById("camFpsBadge");
             if (badge) badge.innerText = `${overlayCanvas.width}x${overlayCanvas.height}`;
             const statusText = document.getElementById("scanStatusText");
-            if (statusText) statusText.innerText = "الكاميرا جاهزة للتعرف";
+            if (statusText) statusText.innerText = "STANDBY / READY";
         };
+
+        // Populate camera list with proper labels now that permission is granted
+        await populateWebcamDevices();
     } catch (err) {
         console.error("Camera access failed:", err);
         if (errorNotice) errorNotice.classList.remove("hidden");
         const statusText = document.getElementById("scanStatusText");
         if (statusText) statusText.innerText = "تعذر تشغيل الكاميرا";
     }
-}
-
-async function switchCameraFacing() {
-    currentFacingMode = currentFacingMode === "user" ? "environment" : "user";
-    const label = document.getElementById("cameraFacingLabel");
-    if (label) {
-        label.innerText = currentFacingMode === "user" ? "أمامية (سيلفي)" : "خلفية";
-    }
-
-    if (videoElement && overlayCanvas) {
-        if (currentFacingMode === "user") {
-            videoElement.classList.add("-scale-x-100");
-            overlayCanvas.classList.add("-scale-x-100");
-        } else {
-            videoElement.classList.remove("-scale-x-100");
-            overlayCanvas.classList.remove("-scale-x-100");
-        }
-    }
-
-    await initCamera();
 }
 
 function restartCamera() {
@@ -166,7 +211,7 @@ function captureFrameBase64() {
     offCanvas.height = videoElement.videoHeight;
     const offCtx = offCanvas.getContext("2d");
 
-    // We do not mirror when saving to backend so orientation is standard
+    // Standard unmirrored capture for AI engine
     offCtx.drawImage(videoElement, 0, 0, offCanvas.width, offCanvas.height);
     return offCanvas.toDataURL("image/jpeg", 0.90);
 }
@@ -176,7 +221,7 @@ function switchTab(tabId) {
     currentTab = tabId;
     document.querySelectorAll(".tab-view").forEach(el => el.classList.add("hidden"));
     document.querySelectorAll(".tab-btn").forEach(el => {
-        el.classList.remove("border-indigo-500", "text-indigo-400", "bg-indigo-500/10");
+        el.classList.remove("border-cyan-500", "text-cyan-400", "bg-cyan-500/10");
         el.classList.add("border-transparent", "text-slate-400");
     });
 
@@ -185,18 +230,19 @@ function switchTab(tabId) {
     if (activeView) activeView.classList.remove("hidden");
     if (activeBtn) {
         activeBtn.classList.remove("border-transparent", "text-slate-400");
-        activeBtn.classList.add("border-indigo-500", "text-indigo-400", "bg-indigo-500/10");
+        activeBtn.classList.add("border-cyan-500", "text-cyan-400", "bg-cyan-500/10");
     }
 
     if (tabId === "users") loadUsersList();
+    if (tabId === "attendance") loadAttendanceList();
     if (tabId === "logs") loadLogsList();
     if (tabId !== "scan") {
         stopAutoScan();
     }
 }
 
-// Draw Face Box on Canvas
-function drawFaceBox(box, status, label) {
+// Futuristic Cyber HUD Drawing (Landmarks, Corner brackets, Connection Mesh)
+function drawCyberHUD(box, status, label) {
     if (!ctx || !box) return;
     ctx.clearRect(0, 0, overlayCanvas.width, overlayCanvas.height);
 
@@ -205,59 +251,133 @@ function drawFaceBox(box, status, label) {
     const w = box.width;
     const h = box.height;
 
-    let color = "#38bdf8"; // default cyan
-    if (status === "GRANTED") color = "#10b981"; // emerald
-    else if (status === "DENIED") color = "#ef4444"; // red
-    else if (status === "UNKNOWN") color = "#f59e0b"; // amber
+    let primaryColor = "#38bdf8"; // Cyan
+    if (status === "GRANTED") primaryColor = "#10b981"; // Emerald
+    else if (status === "DENIED") primaryColor = "#ef4444"; // Red
+    else if (status === "UNKNOWN") primaryColor = "#f59e0b"; // Amber
 
-    ctx.strokeStyle = color;
+    // 1. Draw corner brackets
+    const cornerLen = Math.min(24, Math.floor(w / 4));
+    ctx.strokeStyle = primaryColor;
     ctx.lineWidth = 3;
+    ctx.lineCap = "round";
+
+    // Top-Left
     ctx.beginPath();
-    ctx.roundRect(x, y, w, h, 8);
+    ctx.moveTo(x, y + cornerLen);
+    ctx.lineTo(x, y);
+    ctx.lineTo(x + cornerLen, y);
     ctx.stroke();
 
-    // Fill label background
-    if (label) {
-        ctx.fillStyle = color;
-        ctx.font = "bold 14px Cairo, sans-serif";
-        const textWidth = ctx.measureText(label).width;
-        ctx.fillRect(x, Math.max(0, y - 28), textWidth + 16, 26);
+    // Top-Right
+    ctx.beginPath();
+    ctx.moveTo(x + w - cornerLen, y);
+    ctx.lineTo(x + w, y);
+    ctx.lineTo(x + w, y + cornerLen);
+    ctx.stroke();
 
-        ctx.fillStyle = "#ffffff";
-        ctx.fillText(label, x + 8, Math.max(18, y - 10));
+    // Bottom-Left
+    ctx.beginPath();
+    ctx.moveTo(x, y + h - cornerLen);
+    ctx.lineTo(x, y + h);
+    ctx.lineTo(x + cornerLen, y + h);
+    ctx.stroke();
+
+    // Bottom-Right
+    ctx.beginPath();
+    ctx.moveTo(x + w - cornerLen, y + h);
+    ctx.lineTo(x + w, y + h);
+    ctx.lineTo(x + w, y + h - cornerLen);
+    ctx.stroke();
+
+    // Bounding box subtle glow fill
+    ctx.fillStyle = primaryColor + "15";
+    ctx.fillRect(x, y, w, h);
+
+    // 2. Draw 5 Facial Landmark Nodes & Mesh Lines
+    if (box.landmarks && box.landmarks.length >= 5) {
+        ctx.fillStyle = primaryColor;
+        ctx.strokeStyle = primaryColor + "60";
+        ctx.lineWidth = 1;
+
+        // Draw connecting mesh lines between eyes, nose and mouth
+        const lms = box.landmarks;
+        const re = lms.find(l => l.name === "right_eye") || lms[0];
+        const le = lms.find(l => l.name === "left_eye") || lms[1];
+        const no = lms.find(l => l.name === "nose") || lms[2];
+        const rm = lms.find(l => l.name === "right_mouth") || lms[3];
+        const lm = lms.find(l => l.name === "left_mouth") || lms[4];
+
+        if (re && le && no && rm && lm) {
+            ctx.beginPath();
+            ctx.moveTo(re.x, re.y);
+            ctx.lineTo(le.x, le.y);
+            ctx.lineTo(no.x, no.y);
+            ctx.closePath();
+            ctx.stroke();
+
+            ctx.beginPath();
+            ctx.moveTo(no.x, no.y);
+            ctx.lineTo(rm.x, rm.y);
+            ctx.lineTo(lm.x, lm.y);
+            ctx.closePath();
+            ctx.stroke();
+        }
+
+        // Draw circles on landmark points
+        box.landmarks.forEach(lm => {
+            ctx.beginPath();
+            ctx.arc(lm.x, lm.y, 3.5, 0, 2 * Math.PI);
+            ctx.fillStyle = "#ffffff";
+            ctx.fill();
+            ctx.strokeStyle = primaryColor;
+            ctx.lineWidth = 1.5;
+            ctx.stroke();
+        });
     }
 
-    // Clear after 3.5 seconds
+    // 3. Top Label Badge
+    if (label) {
+        ctx.fillStyle = primaryColor;
+        ctx.font = "bold 13px Cairo, sans-serif";
+        const textWidth = ctx.measureText(label).width;
+        ctx.fillRect(x, Math.max(0, y - 26), textWidth + 14, 24);
+
+        ctx.fillStyle = "#020617";
+        ctx.fillText(label, x + 7, Math.max(16, y - 9));
+    }
+
+    // 4. Update Multi-Face Warning Banner
+    const multiAlert = document.getElementById("multiFaceAlert");
+    if (multiAlert) {
+        if (box.faces_count && box.faces_count > 1) {
+            multiAlert.classList.remove("hidden");
+        } else {
+            multiAlert.classList.add("hidden");
+        }
+    }
+
+    // 5. Update Liveness / Sharpness Telemetry Badge
+    const livenessBadge = document.getElementById("hudLivenessBadge");
+    const sharpnessVal = document.getElementById("hudSharpnessVal");
+    if (livenessBadge && sharpnessVal && box.sharpness !== undefined) {
+        livenessBadge.classList.remove("hidden");
+        sharpnessVal.innerText = box.sharpness;
+    }
+
+    // Clear after 3.5s
     setTimeout(() => {
         ctx.clearRect(0, 0, overlayCanvas.width, overlayCanvas.height);
+        if (multiAlert) multiAlert.classList.add("hidden");
+        if (livenessBadge) livenessBadge.classList.add("hidden");
     }, 3500);
-}
-
-// Trigger Mobile Camera for Face Scan
-function triggerMobileScanCamera() {
-    const input = document.getElementById("mobileScanCameraInput");
-    if (input) input.click();
-}
-
-function handleMobileScanCapture(event) {
-    const file = event.target.files && event.target.files[0];
-    if (!file) return;
-
-    const reader = new FileReader();
-    reader.onload = async (e) => {
-        const base64Data = e.target.result;
-        await executeFaceVerify(base64Data);
-    };
-    reader.readAsDataURL(file);
-    event.target.value = "";
 }
 
 // Scan Face Once from Live Webcam
 async function scanFaceOnce() {
     const imageBase64 = captureFrameBase64();
     if (!imageBase64) {
-        // Automatically offer to use mobile camera snapshot if webcam is unavailable
-        triggerMobileScanCamera();
+        alert("يرجى التأكد من تشغيل كاميرا الكمبيوتر أولاً.");
         return;
     }
     await executeFaceVerify(imageBase64);
@@ -276,7 +396,7 @@ async function executeFaceVerify(imageBase64) {
         btn.disabled = true;
         btn.innerHTML = `<span class="inline-block animate-spin mr-2">⏳</span> جاري فحص ومطابقة الوجه بالذكاء الاصطناعي...`;
     }
-    if (statusText) statusText.innerText = "جاري مطابقة بصمة الوجه...";
+    if (statusText) statusText.innerText = "MATCHING BIOMETRIC EMBEDDING...";
 
     try {
         const response = await fetch("/api/verify", {
@@ -291,11 +411,11 @@ async function executeFaceVerify(imageBase64) {
 
         renderVerificationResult(data);
 
-        // Update stats & logs
+        // Update stats
         updateStats();
     } catch (err) {
         console.error("Verification failed:", err);
-        if (statusText) statusText.innerText = "حدث خطأ أثناء فحص الوجه";
+        if (statusText) statusText.innerText = "فشل الاتصال بالنظام";
     } finally {
         isScanning = false;
         if (btn) {
@@ -312,10 +432,11 @@ function renderVerificationResult(data) {
 
     if (data.status === "GRANTED") {
         playAccessGrantedSound();
-        statusText.innerText = `تم التعرف: ${data.user.name} (مصرح)`;
-        drawFaceBox(data.face_box, "GRANTED", `${data.user.name} (${data.confidence}%)`);
+        speakVoice(`أهلاً بك يا ${data.user.name}. تم التحقق من الهوية ومنح الإذن بالدخول.`);
+        statusText.innerText = `IDENTIFIED: ${data.user.name} (GRANTED)`;
+        drawCyberHUD(data.face_box, "GRANTED", `${data.user.name} (${data.confidence}%)`);
 
-        // حفظ التوكن في المتصفح لفتح الموقع المحمي في أي وقت
+        // Save session token in cookie & localStorage
         if (data.token) {
             localStorage.setItem("face_session_token", data.token);
             document.cookie = `face_session_token=${data.token}; path=/; max-age=86400; SameSite=Lax`;
@@ -323,14 +444,13 @@ function renderVerificationResult(data) {
             if (navLink) navLink.href = data.redirect_url;
         }
 
-        // إيقاف المسح التلقائي مؤقتاً لتجنب التكرار
         stopAutoScan();
 
         card.innerHTML = `
             <div class="bg-gradient-to-br from-emerald-950/80 via-slate-900 to-slate-900 border-2 border-emerald-500/50 rounded-2xl p-6 shadow-2xl glow-granted">
                 <div class="flex items-center gap-2 text-emerald-400 font-extrabold text-sm mb-3">
                     <span class="w-2.5 h-2.5 rounded-full bg-emerald-400 animate-ping"></span>
-                    ✅ تم التحقق من الوجه بنجاح - مصرح لك بالدخول!
+                    ✅ تم التحقق من الهوية بنجاح - مصرح لك بالدخول!
                 </div>
 
                 <div class="flex items-center gap-4 mb-5">
@@ -345,20 +465,20 @@ function renderVerificationResult(data) {
                 </div>
 
                 <div class="p-3 bg-emerald-950/40 rounded-xl border border-emerald-500/20 text-xs text-slate-300 mb-5 leading-relaxed flex items-center justify-between">
-                    <span>تم فتح جلسة أمان مصرحة ومطابقة بنجاح.</span>
+                    <span>تم فتح جلسة أمان مصرحة وتوثيق تسجيل الحضور بنجاح.</span>
                     <span id="autoRedirectCountdown" class="text-emerald-400 font-bold font-mono">التحويل خلال 3 ثوانٍ...</span>
                 </div>
 
                 <div class="flex flex-col sm:flex-row gap-3">
                     <a href="${data.redirect_url}" class="flex-1 py-3 px-4 bg-gradient-to-r from-emerald-600 to-teal-500 hover:from-emerald-500 hover:to-teal-400 text-white font-extrabold text-sm rounded-xl transition duration-200 text-center shadow-lg shadow-emerald-600/30 flex items-center justify-center gap-2">
-                        <span>🚀 فتح الموقع أو البرنامج المربوط الآن</span>
+                        <span>🚀 فتح مساحة العمل المحمية الآن</span>
                         <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M14 5l7 7m0 0l-7 7m7-7H3"/></svg>
                     </a>
                 </div>
             </div>
         `;
 
-        // عد تنازلي للتحويل التلقائي السلس
+        // 3s Auto-redirect timer
         let countdown = 3;
         const countdownEl = document.getElementById("autoRedirectCountdown");
         const redirectTimer = setInterval(() => {
@@ -372,8 +492,9 @@ function renderVerificationResult(data) {
         }, 1000);
     } else if (data.status === "DENIED") {
         playAccessDeniedSound();
-        statusText.innerText = `مرفوض: ${data.user.name} (بدون صلاحية)`;
-        drawFaceBox(data.face_box, "DENIED", `${data.user.name} (محظور)`);
+        speakVoice(`تم التعرف على ${data.user.name}. ولكن تم رفض الدخول لعدم وجود صلاحية.`);
+        statusText.innerText = `IDENTIFIED: ${data.user.name} (DENIED)`;
+        drawCyberHUD(data.face_box, "DENIED", `${data.user.name} (محظور)`);
 
         card.innerHTML = `
             <div class="bg-gradient-to-br from-red-950/80 via-slate-900 to-slate-900 border-2 border-red-500/50 rounded-2xl p-6 shadow-2xl">
@@ -395,19 +516,18 @@ function renderVerificationResult(data) {
 
                 <div class="p-3.5 bg-red-950/40 rounded-xl border border-red-500/30 text-xs text-red-200 mb-4 leading-relaxed">
                     <b>سبب الرفض:</b> ${data.reason}
-                    <br>
-                    <span class="text-slate-400 text-[11px]">يمكن لمسؤول النظام تفعيل الصلاحية من تبويب "إدارة المستخدمين والصلاحيات".</span>
                 </div>
 
                 <button onclick="switchTab('users')" class="w-full py-2.5 px-4 bg-slate-800 hover:bg-slate-700 text-slate-200 text-xs font-bold rounded-xl border border-slate-700 transition">
-                    الانتقال لإدارة الصلاحيات لتفعيل الدخول لهذا المستخدم
+                    الانتقال لقائمة المستخدمين لتفعيل الصلاحية
                 </button>
             </div>
         `;
     } else if (data.status === "UNKNOWN") {
         playAccessDeniedSound();
-        statusText.innerText = "وجه غير مسجل في النظام";
-        drawFaceBox(data.face_box, "UNKNOWN", "غير مسجل");
+        speakVoice("عذراً، هذا الوجه غير مسجل في النظام.");
+        statusText.innerText = "UNKNOWN FACE DETECTED";
+        drawCyberHUD(data.face_box, "UNKNOWN", "غير مسجل");
 
         card.innerHTML = `
             <div class="bg-gradient-to-br from-amber-950/60 via-slate-900 to-slate-900 border-2 border-amber-500/40 rounded-2xl p-6 shadow-2xl">
@@ -417,11 +537,11 @@ function renderVerificationResult(data) {
                 </div>
 
                 <p class="text-xs text-slate-300 mb-4 leading-relaxed">
-                    لم نتمكن من العثور على أي تطابق مع الوجوه المسجلة في قاعدة البيانات. هذا الشخص غير مصرح له بفتح الموقع أو البرنامج.
+                    لم يتم العثور على أي تطابق مع الوجوه المسجلة في قاعدة البيانات. هذا الشخص غير مصرح له بفتح النظام.
                 </p>
 
                 <div class="flex gap-3">
-                    <button onclick="switchTab('register')" class="flex-1 py-2.5 px-4 bg-indigo-600 hover:bg-indigo-500 text-white font-bold text-xs rounded-xl transition">
+                    <button onclick="switchTab('register')" class="flex-1 py-2.5 px-4 bg-cyan-600 hover:bg-cyan-500 text-white font-bold text-xs rounded-xl transition">
                         تسجيل هذا الوجه كشخص جديد الآن
                     </button>
                     <button onclick="scanFaceOnce()" class="py-2.5 px-4 bg-slate-800 hover:bg-slate-700 text-slate-300 font-bold text-xs rounded-xl border border-slate-700 transition">
@@ -431,12 +551,11 @@ function renderVerificationResult(data) {
             </div>
         `;
     } else {
-        // No face or error
-        statusText.innerText = data.message || "تنبيه أثناء المسح";
+        statusText.innerText = data.message || "NO FACE DETECTED";
         card.innerHTML = `
             <div class="p-5 bg-slate-900 border border-slate-800 rounded-2xl text-center">
                 <p class="text-xs text-amber-400 font-bold mb-2">${data.message || "لم يتم العثور على وجه واضح"}</p>
-                <p class="text-[11px] text-slate-500">يرجى توجيه الوجه مباشرة لعدسة الكاميرا وضبط الإضاءة.</p>
+                <p class="text-[11px] text-slate-500">يرجى الجلوس أمام الكاميرا وضبط الإضاءة.</p>
             </div>
         `;
     }
@@ -469,7 +588,7 @@ function stopAutoScan() {
     if (chk) chk.checked = false;
 }
 
-// Multi-Angle Face Capture State
+// Multi-Angle Face Capture State (3D Profile)
 const capturedAngles = {
     center: null,
     right: null,
@@ -480,40 +599,21 @@ const capturedAngles = {
 let wizardRunning = false;
 let wizardTimeout = null;
 
-function playAngleCaptureBeep() {
-    try {
-        const osc = audioCtx.createOscillator();
-        const gain = audioCtx.createGain();
-        osc.connect(gain);
-        gain.connect(audioCtx.destination);
-        osc.type = "sine";
-        const now = audioCtx.currentTime;
-        osc.frequency.setValueAtTime(659.25, now); // E5
-        gain.gain.setValueAtTime(0.18, now);
-        gain.gain.exponentialRampToValueAtTime(0.01, now + 0.15);
-        osc.start(now);
-        osc.stop(now + 0.15);
-    } catch (e) {}
-}
-
-// Capture specific angle slot
 function captureSpecificAngle(angleKey) {
     const snap = captureFrameBase64();
     if (!snap) {
-        alert("يرجى التأكد من تشغيل الكاميرا والسماح بالوصول.");
+        alert("يرجى التأكد من تشغيل كاميرا الكمبيوتر.");
         return;
     }
 
     capturedAngles[angleKey] = snap;
     playAngleCaptureBeep();
 
-    // Update Thumbnail
     const thumb = document.getElementById(`thumb-${angleKey}`);
     if (thumb) {
         thumb.innerHTML = `<img src="${snap}" class="w-full h-full object-cover">`;
     }
 
-    // Update Badge & Card Border
     const badge = document.getElementById(`badge-${angleKey}`);
     if (badge) {
         badge.innerText = "✅ تم";
@@ -522,13 +622,12 @@ function captureSpecificAngle(angleKey) {
     const card = document.getElementById(`card-${angleKey}`);
     if (card) {
         card.classList.remove("border-slate-700/70");
-        card.classList.add("border-emerald-500/60", "bg-emerald-950/20");
+        card.classList.add("border-cyan-500/60", "bg-cyan-950/20");
     }
 
     updateAngleMetrics();
 }
 
-// Reset all angles
 function resetAllAngles() {
     stopWizard();
     for (let key in capturedAngles) {
@@ -544,14 +643,13 @@ function resetAllAngles() {
         }
         const card = document.getElementById(`card-${key}`);
         if (card) {
-            card.classList.remove("border-emerald-500/60", "bg-emerald-950/20");
+            card.classList.remove("border-cyan-500/60", "bg-cyan-950/20");
             card.classList.add("border-slate-700/70");
         }
     }
     updateAngleMetrics();
 }
 
-// Update Accuracy Metric & Progress Bar
 function updateAngleMetrics() {
     const count = Object.values(capturedAngles).filter(v => v !== null).length;
     const pct = Math.round((count / 5) * 100);
@@ -569,7 +667,7 @@ function updateAngleMetrics() {
             badge.className = "text-xs font-bold text-amber-400";
         } else if (count < 5) {
             badge.innerText = `${count}/5 زوايا (${pct}%) - دقة عالية`;
-            badge.className = "text-xs font-bold text-indigo-400";
+            badge.className = "text-xs font-bold text-cyan-400";
         } else {
             badge.innerText = `5/5 زوايا (100%) - أقصى دقة 3D`;
             badge.className = "text-xs font-bold text-emerald-400";
@@ -584,7 +682,6 @@ function updateAngleMetrics() {
     }
 }
 
-// Stop Guided Wizard
 function stopWizard() {
     wizardRunning = false;
     if (wizardTimeout) clearTimeout(wizardTimeout);
@@ -600,11 +697,10 @@ function stopWizard() {
 
     const btn = document.getElementById("btnStartWizard");
     if (btn) {
-        btn.innerHTML = `<svg class="w-4 h-4 text-amber-300" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 10V3L4 14h7v7l9-11h-7z"/></svg><span>🚀 بدء المعالج الذكي لالتقاط كل الزوايا تلقائياً (5 زوايا بالتتابع)</span>`;
+        btn.innerHTML = `<svg class="w-4 h-4 text-cyan-300" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 10V3L4 14h7v7l9-11h-7z"/></svg><span>🚀 بدء المعالج الذكي لالتقاط كل الزوايا تلقائياً (5 زوايا بالتتابع)</span>`;
     }
 }
 
-// Guided Step-by-Step Auto Wizard with Live Camera HUD
 async function startGuidedAngleCapture() {
     if (wizardRunning) {
         stopWizard();
@@ -612,11 +708,11 @@ async function startGuidedAngleCapture() {
     }
 
     const steps = [
-        { key: "center", title: "🎯 انظر مباشرة للأمام للكاميرا بدون حركة", desc: "الزاوية 1: المركز والأمام" },
-        { key: "right", title: "➡️ أمل وجهك قليلاً جهة اليمين (نحو 20 درجة)", desc: "الزاوية 2: اليمين" },
-        { key: "left", title: "⬅️ أمل وجهك قليلاً جهة اليسار (نحو 20 درجة)", desc: "الزاوية 3: اليسار" },
-        { key: "up", title: "⬆️ ارفع رأسك قليلاً للأعلى", desc: "الزاوية 4: الأعلى" },
-        { key: "down", title: "⬇️ أمل رأسك قليلاً للأسفل", desc: "الزاوية 5: الأسفل" }
+        { key: "center", title: "🎯 انظر مباشرة للأمام للكاميرا بدون حركة", desc: "الزاوية 1: المركز والأمام", voice: "انظر مباشرة للأمام" },
+        { key: "right", title: "➡️ أمل وجهك قليلاً جهة اليمين", desc: "الزاوية 2: اليمين", voice: "أمل وجهك قليلاً جهة اليمين" },
+        { key: "left", title: "⬅️ أمل وجهك قليلاً جهة اليسار", desc: "الزاوية 3: اليسار", voice: "أمل وجهك جهة اليسار" },
+        { key: "up", title: "⬆️ ارفع رأسك قليلاً للأعلى", desc: "الزاوية 4: الأعلى", voice: "ارفع رأسك للأعلى" },
+        { key: "down", title: "⬇️ أمل رأسك قليلاً للأسفل", desc: "الزاوية 5: الأسفل", voice: "أمل رأسك للأسفل" }
     ];
 
     wizardRunning = true;
@@ -637,25 +733,22 @@ async function startGuidedAngleCapture() {
     if (hud) hud.classList.remove("hidden");
     if (faceOval) faceOval.classList.add("hidden");
 
-    // Scroll smoothly to camera so mobile user sees the live action immediately
-    if (videoElement) {
-        videoElement.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
-    }
-
     for (let i = 0; i < steps.length; i++) {
         if (!wizardRunning) break;
         const step = steps[i];
 
-        // Highlight current card in the grid below
         const card = document.getElementById(`card-${step.key}`);
-        if (card) card.classList.add("ring-2", "ring-indigo-400");
+        if (card) card.classList.add("ring-2", "ring-cyan-400");
 
         if (instText) instText.innerText = step.title;
         if (hudStep) hudStep.innerText = `${i + 1}/5`;
         if (hudTitle) hudTitle.innerText = step.title;
         if (hudSub) hudSub.innerText = step.desc;
 
-        // 3 seconds countdown with live HUD display
+        // Speak instruction
+        speakVoice(step.voice);
+
+        // 3s Countdown
         for (let sec = 3; sec > 0; sec--) {
             if (!wizardRunning) break;
             if (hudCount) hudCount.innerText = sec;
@@ -665,32 +758,32 @@ async function startGuidedAngleCapture() {
 
         if (!wizardRunning) break;
 
-        // Visual flash & capture angle snapshot
         triggerCameraFlash();
         captureSpecificAngle(step.key);
 
         if (hudCount) hudCount.innerText = "📸";
         if (countText) countText.innerText = `✅ تم التقاط (${step.desc})! الانتقال للزاوية التالية...`;
-        if (card) card.classList.remove("ring-2", "ring-indigo-400");
+        if (card) card.classList.remove("ring-2", "ring-cyan-400");
 
         await new Promise(r => { wizardTimeout = setTimeout(r, 1100); });
     }
 
     if (wizardRunning) {
         playAccessGrantedSound();
+        speakVoice("تم تسجيل جميع زوايا الوجه بنجاح.");
         if (hudStep) hudStep.innerText = "5/5";
         if (hudTitle) hudTitle.innerText = "🎉 اكتمل تسجيل الزوايا بنجاح!";
         if (hudCount) hudCount.innerText = "✅";
         if (hudSub) hudSub.innerText = "دقة بيومترية 100%! احفظ البروفايل بالأسفل";
-        if (instText) instText.innerText = "🎉 تم التقاط جميع زوايا الوجه بنجاح (100% دقة بيومترية)!";
+        if (instText) instText.innerText = "🎉 تم التقاط جميع زوايا الوجه بنجاح (100% دقة بيومترية 3D)!";
         if (countText) countText.innerText = "اضغط على زر الحفظ بالأسفل لتوثيق البروفايل في النظام.";
         setTimeout(() => {
             stopWizard();
-        }, 3200);
+        }, 3000);
     }
 }
 
-// Access Switch Label updates
+// Access Toggle Switch
 document.getElementById("regHasAccess").addEventListener("change", function(e) {
     const lbl = document.getElementById("accessLabelText");
     if (e.target.checked) {
@@ -714,17 +807,15 @@ async function handleRegister(event) {
     const hasAccess = document.getElementById("regHasAccess").checked;
     const notes = document.getElementById("regNotes").value.trim();
 
-    // Collect captured multi-angles
     const validAngles = {};
     for (let k in capturedAngles) {
         if (capturedAngles[k]) validAngles[k] = capturedAngles[k];
     }
 
-    // If no angles captured in slots, capture current frame as center
     if (Object.keys(validAngles).length === 0) {
         const snap = captureFrameBase64();
         if (!snap) {
-            alert("يرجى التأكد من تشغيل الكاميرا أمامك لالتقاط الوجه.");
+            alert("يرجى تشغيل كاميرا الكمبيوتر لالتقاط الوجه.");
             return;
         }
         validAngles["center"] = snap;
@@ -754,14 +845,14 @@ async function handleRegister(event) {
             statusMsg.innerText = data.message;
             statusMsg.classList.remove("hidden");
 
-            // Reset form & angles
+            speakVoice(`تم تسجيل ${name} بنجاح في النظام.`);
+
             document.getElementById("regName").value = "";
             document.getElementById("regEmail").value = "";
             document.getElementById("regNotes").value = "";
             resetAllAngles();
 
             updateStats();
-            // Automatically switch back to scan view after 2.5s
             setTimeout(() => {
                 switchTab("scan");
             }, 2500);
@@ -798,7 +889,7 @@ async function loadUsersList() {
 
         emptyMsg.classList.add("hidden");
         container.innerHTML = users.map(user => `
-            <div class="bg-slate-800/60 border ${user.has_access ? 'border-slate-700/60' : 'border-red-500/30'} rounded-2xl p-4 flex flex-col justify-between hover:border-slate-600 transition">
+            <div class="bg-slate-800/60 border ${user.has_access ? 'border-slate-700/60' : 'border-red-500/30'} rounded-2xl p-4 flex flex-col justify-between hover:border-cyan-500/50 transition">
                 <div class="flex items-center gap-3 mb-3">
                     <img src="${user.photo_path || '/static/placeholder.jpg'}" class="w-12 h-12 rounded-xl object-cover ring-2 ${user.has_access ? 'ring-emerald-500/50' : 'ring-red-500/50'}">
                     <div class="flex-1 min-w-0">
@@ -807,7 +898,7 @@ async function loadUsersList() {
                         <div class="flex items-center gap-1.5 mt-1 flex-wrap">
                             <span class="inline-block text-[10px] px-2 py-0.5 rounded bg-slate-700/80 text-slate-300">${user.role}</span>
                             ${user.angles_count > 1 
-                                ? `<span class="inline-block text-[10px] px-2 py-0.5 rounded bg-indigo-500/20 text-indigo-300 border border-indigo-500/30 font-bold">📐 ${user.angles_count} زوايا (3D)</span>`
+                                ? `<span class="inline-block text-[10px] px-2 py-0.5 rounded bg-cyan-500/20 text-cyan-300 border border-cyan-500/30 font-bold">📐 ${user.angles_count} زوايا (3D)</span>`
                                 : `<span class="inline-block text-[10px] px-2 py-0.5 rounded bg-slate-800 text-slate-400 border border-slate-700">زاوية واحدة</span>`
                             }
                         </div>
@@ -835,7 +926,6 @@ async function loadUsersList() {
     }
 }
 
-// Toggle User Access Permission
 async function toggleUserAccess(userId) {
     try {
         const res = await fetch(`/api/users/${userId}/toggle-access`, { method: "POST" });
@@ -848,7 +938,6 @@ async function toggleUserAccess(userId) {
     }
 }
 
-// Delete User Profile
 async function deleteUserProfile(userId, name) {
     if (!confirm(`هل أنت متأكد من حذف الملف الشخصي للمستخدم: "${name}"؟`)) return;
     try {
@@ -862,7 +951,59 @@ async function deleteUserProfile(userId, name) {
     }
 }
 
-// Load Logs for Tab 4
+// Load Attendance List for Tab 4
+async function loadAttendanceList(selectedDate = null) {
+    const tbody = document.getElementById("attendanceTableBody");
+    const dateInput = document.getElementById("attendanceDatePicker");
+
+    if (dateInput && !dateInput.value) {
+        const todayStr = new Date().toISOString().split("T")[0];
+        dateInput.value = todayStr;
+    }
+
+    const queryDate = selectedDate || (dateInput ? dateInput.value : "");
+    const url = queryDate ? `/api/attendance?date=${queryDate}` : "/api/attendance";
+
+    try {
+        const res = await fetch(url);
+        const data = await res.json();
+
+        if (!data || data.length === 0) {
+            tbody.innerHTML = `<tr><td colspan="7" class="py-6 text-center text-slate-500">لا يوجد موظفون مسجلون في النظام حتى الآن</td></tr>`;
+            return;
+        }
+
+        tbody.innerHTML = data.map(item => {
+            const statusBadge = item.is_present 
+                ? `<span class="px-2.5 py-1 rounded-full bg-emerald-500/20 text-emerald-300 border border-emerald-500/40 font-bold flex items-center gap-1.5 w-fit"><span class="w-2 h-2 rounded-full bg-emerald-400 animate-ping"></span>حاضر الآن</span>`
+                : `<span class="px-2.5 py-1 rounded-full bg-slate-800 text-slate-400 border border-slate-700 font-medium">غائب</span>`;
+
+            return `
+                <tr class="hover:bg-slate-800/40 transition">
+                    <td class="py-3 px-4">
+                        <div class="flex items-center gap-2.5">
+                            <img src="${item.photo_path || '/static/placeholder.jpg'}" class="w-8 h-8 rounded-lg object-cover ring-1 ring-slate-700">
+                            <div>
+                                <p class="font-bold text-white">${item.name}</p>
+                                <p class="text-[10px] text-slate-400">${item.email}</p>
+                            </div>
+                        </div>
+                    </td>
+                    <td class="py-3 px-4 text-slate-300">${item.role}</td>
+                    <td class="py-3 px-4">${statusBadge}</td>
+                    <td class="py-3 px-4 font-mono text-cyan-400">${item.first_in}</td>
+                    <td class="py-3 px-4 font-mono text-slate-300">${item.last_seen}</td>
+                    <td class="py-3 px-4 font-semibold text-slate-200">${item.duration}</td>
+                    <td class="py-3 px-4 font-mono text-slate-400">${item.total_scans}</td>
+                </tr>
+            `;
+        }).join("");
+    } catch (err) {
+        console.error("Load attendance failed:", err);
+    }
+}
+
+// Load Logs for Tab 5
 async function loadLogsList() {
     const tbody = document.getElementById("logsTableBody");
     try {
@@ -898,11 +1039,11 @@ async function loadLogsList() {
     }
 }
 
-// Quick Header Stats update
+// Update Header Stats
 async function updateStats() {
     try {
-        const res = await fetch("/api/users");
-        const users = await res.json();
+        const resUsers = await fetch("/api/users");
+        const users = await resUsers.json();
         const total = users.length;
         const active = users.filter(u => u.has_access === 1 || u.has_access === true).length;
 
@@ -910,83 +1051,20 @@ async function updateStats() {
         const elActive = document.getElementById("statActiveUsers");
         if (elTotal) elTotal.innerText = total;
         if (elActive) elActive.innerText = active;
+
+        const resAtt = await fetch("/api/attendance");
+        if (resAtt.ok) {
+            const att = await resAtt.json();
+            const present = att.filter(a => a.is_present).length;
+            const elPresent = document.getElementById("statPresentToday");
+            if (elPresent) elPresent.innerText = present;
+        }
     } catch (e) {
         console.error(e);
     }
 }
 
-// Mobile QR Code Modal Management
-let qrInstance = null;
-
-async function openMobileQrModal() {
-    const modal = document.getElementById("mobileQrModal");
-    if (!modal) return;
-
-    // Fetch dynamic network info from backend to get latest tunnel URL
-    try {
-        const res = await fetch("/api/network-info");
-        if (res.ok) {
-            const net = await res.json();
-            const httpsEl = document.getElementById("mobileHttpsUrlDisplay");
-            const lanEl = document.getElementById("mobileLanUrlDisplay");
-            if (httpsEl && net.mobile_url) httpsEl.innerText = net.mobile_url;
-            if (lanEl && net.local_url) lanEl.innerText = net.local_url;
-        }
-    } catch (e) {
-        console.log("Network info check:", e);
-    }
-
-    const qrContainer = document.getElementById("mobileQrContainer");
-    qrContainer.innerHTML = "";
-
-    const httpsEl = document.getElementById("mobileHttpsUrlDisplay");
-    const targetUrl = httpsEl ? httpsEl.innerText.trim() : window.location.href;
-
-    if (typeof QRCode !== "undefined") {
-        qrInstance = new QRCode(qrContainer, {
-            text: targetUrl,
-            width: 195,
-            height: 195,
-            colorDark: "#0f172a",
-            colorLight: "#ffffff",
-            correctLevel: QRCode.CorrectLevel.M
-        });
-    }
-
-    modal.classList.remove("hidden");
-    modal.classList.add("flex");
-}
-
-function closeMobileQrModal() {
-    const modal = document.getElementById("mobileQrModal");
-    if (!modal) return;
-    modal.classList.add("hidden");
-    modal.classList.remove("flex");
-}
-
-function copyHttpsMobileUrl() {
-    const el = document.getElementById("mobileHttpsUrlDisplay");
-    const text = el ? el.innerText.trim() : "";
-    if (!text) return;
-    navigator.clipboard.writeText(text).then(() => {
-        alert(`تم نسخ رابط الموبايل (HTTPS مع كاميرا لايف بدون قيود) بنجاح:\n${text}`);
-    }).catch(() => {
-        prompt("انسخ الرابط التالي:", text);
-    });
-}
-
-function copyLanMobileUrl() {
-    const el = document.getElementById("mobileLanUrlDisplay");
-    const text = el ? el.innerText.trim() : "";
-    if (!text) return;
-    navigator.clipboard.writeText(text).then(() => {
-        alert(`تم نسخ رابط الشبكة المحلية (LAN) بنجاح:\n${text}`);
-    }).catch(() => {
-        prompt("انسخ الرابط التالي:", text);
-    });
-}
-
-// Auto start camera on load
+// Auto start camera on desktop load
 window.addEventListener("DOMContentLoaded", () => {
     initCamera();
 });

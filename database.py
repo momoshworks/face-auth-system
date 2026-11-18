@@ -413,5 +413,130 @@ def get_storage_stats() -> Dict[str, Any]:
     finally:
         conn.close()
 
+# ==================== نظام الحضور والانصراف وساعات العمل وتصدير التقارير ====================
+
+def get_daily_attendance(date_str: Optional[str] = None) -> List[Dict[str, Any]]:
+    """
+    استخراج تقرير الحضور والانصراف اليومي للموظفين المسجلين.
+    يحسب أول دخول (First In)، آخر تواجد (Last Seen)، وإجمالي ساعات العمل.
+    """
+    if not date_str:
+        date_str = datetime.now().strftime("%Y-%m-%d")
+
+    conn = get_connection()
+    try:
+        cursor = conn.cursor()
+        # جلب جميع المستخدمين المسجلين
+        cursor.execute("SELECT id, name, email, role, has_access, photo_path FROM users ORDER BY name ASC")
+        all_users = cursor.fetchall()
+
+        attendance_list = []
+        for u in all_users:
+            user_id = u["id"]
+            # البحث عن حركات الدخول المقبولة اليوم
+            cursor.execute("""
+                SELECT timestamp, confidence 
+                FROM access_logs 
+                WHERE user_id = ? AND status = 'GRANTED' AND timestamp LIKE ?
+                ORDER BY id ASC
+            """, (user_id, f"{date_str}%"))
+            logs = cursor.fetchall()
+
+            if logs:
+                first_in = logs[0]["timestamp"]
+                last_seen = logs[-1]["timestamp"]
+                total_scans = len(logs)
+                is_present = True
+                
+                # حساب الفرق بالدقائق والساعات إن أمكن
+                duration_str = "دخول حديث"
+                try:
+                    t1 = datetime.strptime(first_in, "%Y-%m-%d %H:%M:%S")
+                    t2 = datetime.strptime(last_seen, "%Y-%m-%d %H:%M:%S")
+                    diff_seconds = int((t2 - t1).total_seconds())
+                    hours = diff_seconds // 3600
+                    minutes = (diff_seconds % 3600) // 60
+                    if hours > 0:
+                        duration_str = f"{hours} س و {minutes} د"
+                    elif minutes > 0:
+                        duration_str = f"{minutes} دقيقة"
+                    else:
+                        duration_str = "بضع ثوانٍ"
+                except Exception:
+                    pass
+
+                attendance_list.append({
+                    "user_id": user_id,
+                    "name": u["name"],
+                    "email": u["email"],
+                    "role": u["role"],
+                    "photo_path": u["photo_path"],
+                    "has_access": bool(u["has_access"]),
+                    "is_present": True,
+                    "status_label": "حاضر الآن",
+                    "first_in": first_in.split(" ")[1] if " " in first_in else first_in,
+                    "last_seen": last_seen.split(" ")[1] if " " in last_seen else last_seen,
+                    "full_first_in": first_in,
+                    "full_last_seen": last_seen,
+                    "total_scans": total_scans,
+                    "duration": duration_str
+                })
+            else:
+                attendance_list.append({
+                    "user_id": user_id,
+                    "name": u["name"],
+                    "email": u["email"],
+                    "role": u["role"],
+                    "photo_path": u["photo_path"],
+                    "has_access": bool(u["has_access"]),
+                    "is_present": False,
+                    "status_label": "غائب",
+                    "first_in": "-",
+                    "last_seen": "-",
+                    "full_first_in": "-",
+                    "full_last_seen": "-",
+                    "total_scans": 0,
+                    "duration": "-"
+                })
+
+        return attendance_list
+    finally:
+        conn.close()
+
+def export_logs_csv() -> str:
+    """توليد ملف CSV لسجل الدخول والحركات مع معالجة أحرف اللغة العربية (UTF-8 with BOM)"""
+    conn = get_connection()
+    try:
+        cursor = conn.cursor()
+        cursor.execute("SELECT id, timestamp, user_name, user_id, status, confidence FROM access_logs ORDER BY id DESC")
+        rows = cursor.fetchall()
+
+        # \ufeff تضمن قراءة النصوص العربية بشكل صحيح في برنامج Excel
+        lines = ["\ufeffمعرف السجل,التوقيت,اسم المستخدم,معرف المستخدم,الحالة والنتيجة,نسبة التطابق"]
+        status_map = {
+            "GRANTED": "مصرح له بالدخول (مقبول)",
+            "DENIED_NO_ACCESS": "مرفوض - بدون صلاحية",
+            "UNKNOWN_FACE": "وجه غير مسجل في النظام",
+            "NO_REGISTERED_USERS": "لا يوجد مستخدمين مسجلين"
+        }
+        for r in rows:
+            stat = status_map.get(r["status"], r["status"])
+            conf = f"{r['confidence']}%" if r["confidence"] else "-"
+            u_name = (r["user_name"] or "مجهول").replace(",", " ")
+            lines.append(f"{r['id']},{r['timestamp']},{u_name},{r['user_id'] or '-'},{stat},{conf}")
+
+        return "\n".join(lines)
+    finally:
+        conn.close()
+
+def export_attendance_csv(date_str: Optional[str] = None) -> str:
+    """توليد ملف CSV لتقرير الحضور والانصراف اليومي (UTF-8 with BOM)"""
+    attendance = get_daily_attendance(date_str)
+    lines = ["\ufeffمعرف الموظف,اسم الموظف,البريد الإلكتروني,المنصب/الدور,حالة الحضور,أول تسجيل دخول,آخر تواجد,مدة التواجد,إجمالي حركات المسح"]
+    for a in attendance:
+        u_name = a["name"].replace(",", " ")
+        lines.append(f"{a['user_id']},{u_name},{a['email']},{a['role']},{a['status_label']},{a['full_first_in']},{a['full_last_seen']},{a['duration']},{a['total_scans']}")
+    return "\n".join(lines)
+
 # تهيئة قاعدة البيانات
 init_db()

@@ -75,6 +75,7 @@ class FaceEngine:
         """
         استخراج متجه الخصائص (Face Embedding) للوجه الأوضح في الصورة.
         يرجع: (embedding, face_box_dict, status_message)
+        يتضمن فحص المعالم الخمسة (Landmarks)، وعدد الوجوه الحاضرة، ومؤشر الحيوية وجودة الصورة (Sharpness/Liveness).
         """
         faces = self.detect_faces(image)
         if faces is None or len(faces) == 0:
@@ -89,12 +90,39 @@ class FaceEngine:
                 max_area = area
                 best_face = f
 
+        # استخراج المعالم الوجهية الخمسة (Landmarks): العينين، الأنف، وزوايا الفم
+        landmarks = [
+            {"name": "right_eye", "x": float(best_face[4]), "y": float(best_face[5])},
+            {"name": "left_eye", "x": float(best_face[6]), "y": float(best_face[7])},
+            {"name": "nose", "x": float(best_face[8]), "y": float(best_face[9])},
+            {"name": "right_mouth", "x": float(best_face[10]), "y": float(best_face[11])},
+            {"name": "left_mouth", "x": float(best_face[12]), "y": float(best_face[13])},
+        ]
+
+        # فحص حيوية ونقاء الملمس (Texture Sharpness & Anti-Spoofing Heuristic)
+        x1 = max(0, int(best_face[0]))
+        y1 = max(0, int(best_face[1]))
+        w = max(1, int(best_face[2]))
+        h = max(1, int(best_face[3]))
+        x2 = min(image.shape[1], x1 + w)
+        y2 = min(image.shape[0], y1 + h)
+
+        face_crop = image[y1:y2, x1:x2]
+        sharpness = 0.0
+        if face_crop.size > 0:
+            gray_crop = cv2.cvtColor(face_crop, cv2.COLOR_BGR2GRAY)
+            sharpness = float(cv2.Laplacian(gray_crop, cv2.CV_64F).var())
+
         face_box = {
             "x": int(best_face[0]),
             "y": int(best_face[1]),
             "width": int(best_face[2]),
             "height": int(best_face[3]),
-            "score": float(best_face[-1])
+            "score": float(best_face[14]),
+            "landmarks": landmarks,
+            "faces_count": int(len(faces)),
+            "sharpness": round(sharpness, 1),
+            "is_live_hint": bool(sharpness >= 20.0)
         }
 
         # محاذاة وقص الوجه ثم استخراج الـ Embedding
