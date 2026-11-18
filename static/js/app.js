@@ -2,6 +2,23 @@
 let videoElement = document.getElementById("webcam");
 let overlayCanvas = document.getElementById("overlayCanvas");
 let ctx = overlayCanvas ? overlayCanvas.getContext("2d") : null;
+let drawBoxTimeout = null;
+
+function syncVideoAndCanvasDimensions() {
+    if (!videoElement || videoElement.videoWidth === 0) return;
+    const vw = videoElement.videoWidth;
+    const vh = videoElement.videoHeight;
+    if (overlayCanvas.width !== vw || overlayCanvas.height !== vh) {
+        overlayCanvas.width = vw;
+        overlayCanvas.height = vh;
+    }
+    const container = document.getElementById("videoContainer");
+    if (container) {
+        container.style.aspectRatio = `${vw} / ${vh}`;
+    }
+    const statusEl = document.getElementById("camDeviceStatus");
+    if (statusEl) statusEl.innerText = `${vw}x${vh} • جاهز`;
+}
 let currentStream = null;
 let autoScanInterval = null;
 let isScanning = false;
@@ -107,16 +124,15 @@ async function initCamera() {
         currentStream = stream;
         videoElement.srcObject = stream;
 
+        videoElement.onloadedmetadata = syncVideoAndCanvasDimensions;
+        videoElement.oncanplay = syncVideoAndCanvasDimensions;
+        videoElement.onplay = syncVideoAndCanvasDimensions;
+
         try {
             await videoElement.play();
         } catch (e) {}
 
-        videoElement.onloadedmetadata = () => {
-            overlayCanvas.width = videoElement.videoWidth || 640;
-            overlayCanvas.height = videoElement.videoHeight || 480;
-            const statusEl = document.getElementById("camDeviceStatus");
-            if (statusEl) statusEl.innerText = `${overlayCanvas.width}x${overlayCanvas.height} • جاهز`;
-        };
+        syncVideoAndCanvasDimensions();
 
         await populateWebcamDevices();
         startAutoScanning();
@@ -129,6 +145,7 @@ async function initCamera() {
 // Frame capture as Base64 JPEG
 function captureFrameBase64() {
     if (!videoElement || videoElement.videoWidth === 0) return null;
+    syncVideoAndCanvasDimensions();
     const offCanvas = document.createElement("canvas");
     offCanvas.width = videoElement.videoWidth;
     offCanvas.height = videoElement.videoHeight;
@@ -144,7 +161,7 @@ function startAutoScanning() {
         if (!isScanning) {
             scanFaceOnce(true);
         }
-    }, 2500);
+    }, 2200);
 }
 
 // Single Face Scan Execution
@@ -171,8 +188,10 @@ async function scanFaceOnce(isAuto = false) {
         });
         const data = await response.json();
 
-        // Only update UI if a face was detected or if user clicked manually
-        if (data.status !== "NO_FACE" || !isAuto) {
+        if (data.status === "NO_FACE") {
+            // Clear canvas when no face is present
+            if (ctx) ctx.clearRect(0, 0, overlayCanvas.width, overlayCanvas.height);
+        } else {
             if (idleState) idleState.classList.add("hidden");
             if (resultCard) resultCard.classList.remove("hidden");
 
@@ -189,44 +208,90 @@ async function scanFaceOnce(isAuto = false) {
     }
 }
 
-// Clean Enterprise Face Box Drawing
+// Clean Enterprise Face Box Drawing with Correct Selfie Mirror Alignment
 function drawCleanFaceBox(box, status, label) {
     if (!ctx || !box) return;
+    syncVideoAndCanvasDimensions();
     ctx.clearRect(0, 0, overlayCanvas.width, overlayCanvas.height);
+
+    const cw = overlayCanvas.width;
+    const ch = overlayCanvas.height;
+    const w = box.width;
+    const h = box.height;
+
+    // The webcam video element has CSS `transform: -scale-x-100` for a natural selfie mirror experience.
+    // The overlayCanvas is NOT mirrored so text and badges are always sharp and upright (never reversed!).
+    // To match the mirrored selfie video exactly, we mirror the X coordinate:
+    // Sensor X: box.x -> Screen X: cw - (box.x + w)
+    const x = Math.max(0, Math.min(cw - w, cw - (box.x + w)));
+    const y = Math.max(0, Math.min(ch - h, box.y));
 
     let color = "#3b82f6"; // Blue
     if (status === "GRANTED") color = "#10b981"; // Emerald
     else if (status === "DENIED") color = "#f43f5e"; // Rose
     else if (status === "UNKNOWN") color = "#f59e0b"; // Amber
 
-    const x = box.x;
-    const y = box.y;
-    const w = box.width;
-    const h = box.height;
-
-    // Clean subtle rounded outline
+    // 1. Sleek corporate bounding frame with rounded corners
     ctx.strokeStyle = color;
     ctx.lineWidth = 2.5;
     ctx.beginPath();
     ctx.roundRect(x, y, w, h, 12);
     ctx.stroke();
 
-    // Subtle label badge
+    // 2. Corner brackets for modern biometric focus accent
+    const cornerLen = Math.min(18, Math.floor(w / 4));
+    ctx.lineWidth = 4;
+    // Top-left
+    ctx.beginPath();
+    ctx.moveTo(x, y + cornerLen);
+    ctx.lineTo(x, y);
+    ctx.lineTo(x + cornerLen, y);
+    ctx.stroke();
+    // Top-right
+    ctx.beginPath();
+    ctx.moveTo(x + w - cornerLen, y);
+    ctx.lineTo(x + w, y);
+    ctx.lineTo(x + w, y + cornerLen);
+    ctx.stroke();
+    // Bottom-left
+    ctx.beginPath();
+    ctx.moveTo(x, y + h - cornerLen);
+    ctx.lineTo(x, y + h);
+    ctx.lineTo(x + cornerLen, y + h);
+    ctx.stroke();
+    // Bottom-right
+    ctx.beginPath();
+    ctx.moveTo(x + w - cornerLen, y + h);
+    ctx.lineTo(x + w, y + h);
+    ctx.lineTo(x + w, y + h - cornerLen);
+    ctx.stroke();
+
+    // 3. Upright, readable text badge
     if (label) {
+        ctx.font = "bold 13px 'Cairo', system-ui, sans-serif";
+        const textMetrics = ctx.measureText(label);
+        const badgeWidth = Math.max(90, textMetrics.width + 24);
+        const badgeHeight = 28;
+
+        // Position badge above box, or below if too close to top
+        let badgeY = (y >= badgeHeight + 6) ? (y - badgeHeight - 4) : (y + 6);
+        let badgeX = Math.max(4, Math.min(x, cw - badgeWidth - 4));
+
         ctx.fillStyle = color;
-        ctx.font = "bold 13px Cairo, sans-serif";
-        const textWidth = ctx.measureText(label).width;
         ctx.beginPath();
-        ctx.roundRect(x, Math.max(0, y - 26), textWidth + 16, 24, 6);
+        ctx.roundRect(badgeX, badgeY, badgeWidth, badgeHeight, 6);
         ctx.fill();
 
         ctx.fillStyle = "#ffffff";
-        ctx.fillText(label, x + 8, Math.max(16, y - 9));
+        ctx.textAlign = "center";
+        ctx.textBaseline = "middle";
+        ctx.fillText(label, badgeX + (badgeWidth / 2), badgeY + (badgeHeight / 2));
     }
 
-    setTimeout(() => {
+    if (drawBoxTimeout) clearTimeout(drawBoxTimeout);
+    drawBoxTimeout = setTimeout(() => {
         if (ctx) ctx.clearRect(0, 0, overlayCanvas.width, overlayCanvas.height);
-    }, 3000);
+    }, 2800);
 }
 
 // Render Result Card Cleanly
@@ -234,8 +299,10 @@ function renderVerificationResult(data) {
     const card = document.getElementById("verifyResultCard");
     if (!card) return;
 
+    const confVal = Math.round(data.confidence || 0);
+
     if (data.status === "GRANTED") {
-        drawCleanFaceBox(data.face_box, "GRANTED", `${data.user.name} (${data.confidence}%)`);
+        drawCleanFaceBox(data.face_box, "GRANTED", `${data.user.name} (${confVal}%)`);
 
         card.innerHTML = `
             <div class="bg-slate-900 border border-emerald-500/40 rounded-xl p-4 shadow-lg space-y-3">
@@ -254,7 +321,7 @@ function renderVerificationResult(data) {
                         <div class="flex items-center gap-2 mt-0.5 text-xs text-slate-400">
                             <span>${data.user.role}</span>
                             <span>•</span>
-                            <span class="text-emerald-400 font-semibold font-mono">${data.confidence}% تطابق</span>
+                            <span class="text-emerald-400 font-semibold font-mono">${confVal}% تطابق</span>
                         </div>
                     </div>
                 </div>
@@ -272,7 +339,7 @@ function renderVerificationResult(data) {
             </div>
         `;
 
-        // Update the live attendance feed table immediately!
+        // Update live attendance feed
         addEmployeeToLiveFeed({
             name: data.user.name,
             role: data.user.role,
@@ -281,7 +348,7 @@ function renderVerificationResult(data) {
         });
 
     } else if (data.status === "DENIED") {
-        drawCleanFaceBox(data.face_box, "DENIED", `${data.user.name} (محظور)`);
+        drawCleanFaceBox(data.face_box, "DENIED", `${data.user.name} (غير مصرح)`);
 
         card.innerHTML = `
             <div class="bg-slate-900 border border-rose-500/40 rounded-xl p-4 shadow-lg space-y-2">
@@ -323,10 +390,8 @@ function addEmployeeToLiveFeed(employee) {
 
     if (!tbody) return;
 
-    // Check if employee is already at the top of the table
     const existing = tbody.querySelector(`[data-emp-name="${employee.name}"]`);
     if (existing) {
-        // Just flash the existing row
         existing.classList.add("bg-emerald-500/10");
         setTimeout(() => existing.classList.remove("bg-emerald-500/10"), 2000);
         return;
@@ -357,7 +422,6 @@ function addEmployeeToLiveFeed(employee) {
     tbody.prepend(tr);
     setTimeout(() => tr.classList.remove("bg-emerald-500/10"), 2500);
 
-    // Update count in header
     const countEl = document.getElementById("headerPresentCount");
     if (countEl) {
         const currentCount = tbody.querySelectorAll("tr").length;
@@ -365,7 +429,7 @@ function addEmployeeToLiveFeed(employee) {
     }
 }
 
-// Refresh Live Attendance Feed from Backend
+// Refresh Live Attendance Feed
 async function refreshLiveAttendanceFeed() {
     try {
         const res = await fetch("/api/attendance");

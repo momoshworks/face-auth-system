@@ -82,17 +82,12 @@
             </div>
 
             <!-- Camera Video Feed Container -->
-            <div class="relative w-full aspect-[4/3] bg-black rounded-xl overflow-hidden border border-slate-800 shadow-inner flex items-center justify-center">
-                <!-- Video Element -->
-                <video id="webcam" autoplay playsinline muted class="w-full h-full object-cover transform -scale-x-100"></video>
+            <div id="videoContainer" class="relative w-full aspect-[4/3] bg-black rounded-xl overflow-hidden border border-slate-800 shadow-inner flex items-center justify-center">
+                <!-- Video Element (Mirrored Selfie View) -->
+                <video id="webcam" autoplay playsinline muted class="w-full h-full object-fill transform -scale-x-100"></video>
                 
-                <!-- Overlay Canvas for subtle face detection frame -->
-                <canvas id="overlayCanvas" class="absolute inset-0 w-full h-full pointer-events-none transform -scale-x-100 z-10"></canvas>
-                
-                <!-- Subtle Focus Guide -->
-                <div class="absolute inset-0 pointer-events-none border border-slate-700/40 rounded-full mx-auto my-auto w-44 h-56 z-0 flex items-center justify-center">
-                    <div class="w-1.5 h-1.5 bg-slate-500/30 rounded-full"></div>
-                </div>
+                <!-- Overlay Canvas (Normal orientation: Text is drawn upright and clean) -->
+                <canvas id="overlayCanvas" class="absolute inset-0 w-full h-full pointer-events-none z-10"></canvas>
 
                 <!-- Error Notice if Camera Blocked -->
                 <div id="camErrorNotice" class="hidden absolute inset-0 bg-slate-950/95 flex flex-col items-center justify-center p-6 text-center z-30">
@@ -217,7 +212,7 @@
         نظام تسجيل الحضور والانصراف والتحقق البيومتري الذكي • إصدار المؤسسات
     </footer>
 
-    <!-- Client Script -->
-    <script src="/static/js/app.js"></script>
+    <!-- Client Script (Versioned to bust cache) -->
+    <script src="/static/js/app.js?v=2.2"></script>
 </body>
 </html>

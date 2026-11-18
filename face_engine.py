@@ -81,14 +81,30 @@ class FaceEngine:
         if faces is None or len(faces) == 0:
             return None, None, "لم يتم العثور على أي وجه في الصورة. يرجى التوجه أمام الكاميرا مباشرة وبإضاءة جيدة."
 
-        # اختيار الوجه الأكبر مساحة في حال وجود أكثر من شخص
+        # ترشيح الوجوه واختيار الوجه الأقرب والأكثر وضوحاً
+        valid_faces = []
+        for f in faces:
+            score = float(f[14])
+            w_box = float(f[2])
+            h_box = float(f[3])
+            if score >= 0.50 and w_box >= 30 and h_box >= 30:
+                aspect = w_box / h_box
+                if 0.5 <= aspect <= 1.8:
+                    valid_faces.append(f)
+
+        candidates = valid_faces if valid_faces else faces
+
+        # اختيار الوجه الأكبر مساحة وثقة
         best_face = None
         max_area = 0
-        for f in faces:
+        for f in candidates:
             area = f[2] * f[3]
             if area > max_area:
                 max_area = area
                 best_face = f
+
+        if best_face is None:
+            best_face = faces[0]
 
         # استخراج المعالم الوجهية الخمسة (Landmarks): العينين، الأنف، وزوايا الفم
         landmarks = [
@@ -154,10 +170,10 @@ class FaceEngine:
         """تحويل نتيجة المطابقة إلى نسبة مئوية سهلة القراءة للمستخدم"""
         # في SFace، عتبة المطابقة هي 0.363. الدرجات النموذجية للتطابق من 0.363 إلى 0.85+
         if score < 0.20:
-            return max(0.0, score * 100.0)
+            return round(max(0.0, score * 100.0), 1)
         # تحويل تدريجي لعرض نسبة مئوية معبرة
         pct = (score - 0.20) / (0.80 - 0.20) * 100.0
-        return float(np.clip(pct, 0.0, 99.9))
+        return round(float(np.clip(pct, 0.0, 99.9)), 1)
 
     def identify_face(self, target_feature: np.ndarray, registered_users: List[Dict[str, Any]]) -> Tuple[Optional[Dict[str, Any]], float, float]:
         """
