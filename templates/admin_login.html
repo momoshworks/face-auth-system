@@ -3,114 +3,327 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>تسجيل دخول الإدارة | لوحة التحكم</title>
+    <title>تسجيل دخول الإدارة | المصادقة البيومترية</title>
+    <!-- Tailwind CSS -->
     <script src="https://cdn.tailwindcss.com"></script>
-    <link href="https://fonts.googleapis.com/css2?family=Cairo:wght@400;500;600;700;800&family=JetBrains+Mono:wght@500;700&display=swap" rel="stylesheet">
+    <link href="https://fonts.googleapis.com/css2?family=Cairo:wght@400;500;600;700;800;900&family=JetBrains+Mono:wght@500;700&display=swap" rel="stylesheet">
     <style>
         body { font-family: 'Cairo', sans-serif; }
+        .font-mono { font-family: 'JetBrains Mono', monospace; }
     </style>
 </head>
-<body class="bg-slate-950 text-slate-100 min-h-screen flex items-center justify-center p-4 selection:bg-blue-600 selection:text-white">
+<body class="bg-slate-950 text-slate-100 min-h-screen flex flex-col items-center justify-center p-4 selection:bg-blue-600 selection:text-white">
 
-    <div class="max-w-md w-full bg-slate-900/90 border border-slate-800 rounded-2xl p-8 shadow-2xl backdrop-blur">
+    <div class="max-w-lg w-full bg-slate-900/90 border border-slate-800 rounded-3xl p-6 sm:p-8 shadow-2xl backdrop-blur relative overflow-hidden">
         
+        <!-- Ambient Top Glow -->
+        <div class="absolute -top-24 left-1/2 -translate-x-1/2 w-72 h-72 bg-blue-600/15 rounded-full blur-3xl pointer-events-none"></div>
+
         <!-- Header -->
-        <div class="text-center mb-8">
-            <div class="w-14 h-14 rounded-2xl bg-blue-600/10 border border-blue-500/30 flex items-center justify-center mx-auto mb-4 text-blue-400 shadow-inner">
-                <svg class="w-7 h-7" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z"/>
+        <div class="text-center mb-6 relative">
+            <div class="w-16 h-16 rounded-2xl bg-blue-600/10 border border-blue-500/30 flex items-center justify-center mx-auto mb-3 text-blue-400 shadow-inner">
+                <svg class="w-8 h-8" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m5.618-4.016A11.955 11.955 0 0112 2.944a11.955 11.955 0 01-8.618 3.04A12.02 12.02 0 003 9c0 5.591 3.824 10.29 9 11.622 5.176-1.332 9-6.03 9-11.622 0-1.042-.133-2.052-.382-3.016z"/>
                 </svg>
             </div>
-            <h1 class="text-xl font-extrabold text-white">لوحة إدارة النظام البيومتري</h1>
-            <p class="text-xs text-slate-400 mt-1.5 leading-relaxed">
-                يرجى إدخال كلمة مرور مدير النظام للوصول وإدارة الموظفين والصلاحيات
+            <h1 class="text-xl font-extrabold text-white">بوابة إدارة النظام البيومتري</h1>
+            <p class="text-xs text-slate-400 mt-1 leading-relaxed">
+                منطقة محمية • لا يُسمح بالدخول إلا للمدراء المسجلين مسبقاً في النظام
+            </p>
+            <div class="inline-flex items-center gap-1.5 mt-2 px-2.5 py-0.5 rounded-full bg-emerald-500/10 border border-emerald-500/20 text-[10px] text-emerald-400 font-semibold">
+                <span class="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse"></span>
+                <span>فحص الهوية الصارم نشط (Registered Admins Only)</span>
+            </div>
+        </div>
+
+        <!-- Tabs Navigation -->
+        <div class="grid grid-cols-2 gap-1.5 p-1 bg-slate-950/80 rounded-2xl border border-slate-800 mb-6">
+            <button 
+                type="button" 
+                id="tabBtnFace"
+                onclick="switchAuthTab('face')"
+                class="py-2.5 px-3 rounded-xl text-xs font-bold transition flex items-center justify-center gap-2 bg-blue-600 text-white shadow"
+            >
+                <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M14.828 14.828a4 4 0 01-5.656 0M9 10h.01M15 10h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"/></svg>
+                <span>بصمة الوجه (Face ID)</span>
+            </button>
+            <button 
+                type="button" 
+                id="tabBtnPassword"
+                onclick="switchAuthTab('password')"
+                class="py-2.5 px-3 rounded-xl text-xs font-bold transition flex items-center justify-center gap-2 text-slate-400 hover:text-white"
+            >
+                <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 7a2 2 0 012 2m4 0a6 6 0 01-7.743 5.743L11 17H9v2H7v2H4a1 1 0 01-1-1v-2.586a1 1 0 01.293-.707l5.964-5.964A6 6 0 1121 9z"/></svg>
+                <span>الحساب وكلمة المرور</span>
+            </button>
+        </div>
+
+        <!-- Global Alert Message Box -->
+        <div id="authAlertBox" class="hidden mb-4 p-3.5 rounded-2xl text-xs font-semibold leading-relaxed text-center"></div>
+
+        <!-- TAB 1: FACE RECOGNITION LOGIN -->
+        <div id="sectionFaceAuth" class="space-y-4">
+            <div class="relative w-full aspect-[4/3] bg-black rounded-2xl overflow-hidden border border-slate-800 shadow-inner flex items-center justify-center">
+                <!-- Video Element (Mirrored) -->
+                <video id="adminLoginWebcam" autoplay playsinline muted class="w-full h-full object-fill transform -scale-x-100"></video>
+                <canvas id="adminLoginCanvas" class="hidden"></canvas>
+
+                <!-- Scanning Animation Grid Overlay -->
+                <div id="faceScanOverlay" class="hidden absolute inset-0 pointer-events-none flex flex-col items-center justify-center bg-blue-950/20">
+                    <div class="w-48 h-56 border-2 border-dashed border-blue-400/60 rounded-3xl animate-pulse flex items-center justify-center">
+                        <span class="text-xs font-mono text-blue-300 font-bold bg-slate-900/80 px-2 py-1 rounded-lg">جاري مسح بصمة الوجه...</span>
+                    </div>
+                </div>
+
+                <!-- Camera Error Notice -->
+                <div id="cameraUnavailableNotice" class="hidden absolute inset-0 bg-slate-950/95 flex flex-col items-center justify-center p-4 text-center">
+                    <span class="text-2xl mb-1">📷</span>
+                    <p class="text-xs font-bold text-slate-300">تعذر تشغيل الكاميرا</p>
+                    <p class="text-[11px] text-slate-500 mt-1">تأكد من السماح بالوصول للكاميرا أو استخدم تبويب الحساب وكلمة المرور.</p>
+                </div>
+            </div>
+
+            <!-- Face Action Button -->
+            <button 
+                type="button" 
+                id="btnVerifyFaceAdmin"
+                onclick="captureAndVerifyAdminFace()"
+                class="w-full py-3.5 px-4 bg-blue-600 hover:bg-blue-500 text-white font-bold text-xs sm:text-sm rounded-2xl transition duration-200 shadow-lg shadow-blue-600/30 flex items-center justify-center gap-2"
+            >
+                <svg class="w-5 h-5 text-blue-200" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 13a3 3 0 11-6 0 3 3 0 016 0z"/><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 9a2 2 0 012-2h.93a2 2 0 001.664-.89l.812-1.22A2 2 0 0110.07 4h3.86a2 2 0 011.664.89l.812 1.22A2 2 0 0018.07 7H19a2 2 0 012 2v9a2 2 0 01-2 2H5a2 2 0 01-2-2V9z"/></svg>
+                <span>التحقق من وجه المدير وتسجيل الدخول</span>
+            </button>
+            
+            <p class="text-[11px] text-slate-500 text-center">
+                قف أمام الكاميرا مباشرة وبإضاءة جيدة ليتم مطابقة بصمتك مع سجلات المدراء المعتمدين.
             </p>
         </div>
 
-        <!-- Login Form -->
-        <form onsubmit="handleAdminLogin(event)" class="space-y-4">
-            <div>
-                <label class="block text-xs font-semibold text-slate-300 mb-2">كلمة مرور الإدارة</label>
-                <div class="relative">
-                    <input 
-                        type="password" 
-                        id="adminPasswordInput" 
-                        required 
-                        placeholder="••••••••" 
-                        class="w-full px-4 py-3 bg-slate-800/80 border border-slate-700 rounded-xl text-sm text-white focus:outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500 transition dir-ltr text-center font-mono placeholder:text-slate-500"
-                    >
-                    <button type="button" onclick="togglePasswordVisibility()" class="absolute left-3 top-3 text-slate-400 hover:text-slate-200 text-xs">
-                        👁️
-                    </button>
+        <!-- TAB 2: REGISTERED ACCOUNT + PASSWORD LOGIN -->
+        <div id="sectionPasswordAuth" class="hidden space-y-4">
+            <form onsubmit="handleAdminPasswordLogin(event)" class="space-y-4">
+                <div>
+                    <label class="block text-xs font-bold text-slate-300 mb-1.5">البريد الإلكتروني أو الاسم المسجل للمدير</label>
+                    <div class="relative">
+                        <input 
+                            type="text" 
+                            id="adminIdentifierInput" 
+                            required 
+                            placeholder="مثال: moon@gmail.com أو Mohamed Shaaban" 
+                            class="w-full px-4 py-3 bg-slate-800/80 border border-slate-700 rounded-xl text-xs sm:text-sm text-white focus:outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500 transition placeholder:text-slate-500"
+                        >
+                        <span class="absolute left-3 top-3 text-slate-500 text-sm">👤</span>
+                    </div>
+                    <p class="text-[10px] text-slate-500 mt-1">يجب أن يكون الحساب مسجلاً مسبقاً في النظام البيومتري برتبة مدير (Admin).</p>
                 </div>
-                <p class="text-[11px] text-slate-500 mt-1.5 text-right">
-                    كلمة المرور الافتراضية للنظام هي: <span class="font-mono text-blue-400 font-bold">admin123</span> (يمكن تغييرها من الإعدادات).
-                </p>
-            </div>
 
-            <!-- Error Notice -->
-            <div id="loginErrorMsg" class="hidden p-3 rounded-xl bg-rose-500/10 border border-rose-500/20 text-xs text-rose-300 font-semibold text-center">
-            </div>
+                <div>
+                    <label class="block text-xs font-bold text-slate-300 mb-1.5">كلمة مرور الإدارة</label>
+                    <div class="relative">
+                        <input 
+                            type="password" 
+                            id="adminPasswordInput" 
+                            required 
+                            placeholder="••••••••" 
+                            class="w-full px-4 py-3 bg-slate-800/80 border border-slate-700 rounded-xl text-xs sm:text-sm text-white focus:outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500 transition dir-ltr text-center font-mono placeholder:text-slate-500"
+                        >
+                        <button type="button" onclick="togglePasswordVisibility()" class="absolute left-3 top-3 text-slate-400 hover:text-slate-200 text-xs">
+                            👁️
+                        </button>
+                    </div>
+                </div>
 
-            <!-- Submit Button -->
-            <button 
-                type="submit" 
-                id="btnLoginSubmit"
-                class="w-full py-3 px-4 bg-blue-600 hover:bg-blue-500 text-white font-bold text-sm rounded-xl transition duration-200 shadow-lg shadow-blue-600/25 flex items-center justify-center gap-2"
-            >
-                <span>تسجيل الدخول إلى لوحة الإدارة</span>
-                <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M14 5l7 7m0 0l-7 7m7-7H3"/></svg>
-            </button>
-        </form>
+                <button 
+                    type="submit" 
+                    id="btnPasswordSubmit"
+                    class="w-full py-3.5 px-4 bg-blue-600 hover:bg-blue-500 text-white font-bold text-xs sm:text-sm rounded-2xl transition duration-200 shadow-lg shadow-blue-600/30 flex items-center justify-center gap-2"
+                >
+                    <span>التحقق والدخول إلى لوحة الإدارة</span>
+                    <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M14 5l7 7m0 0l-7 7m7-7H3"/></svg>
+                </button>
+            </form>
+        </div>
 
         <!-- Back to Attendance Kiosk -->
-        <div class="mt-6 pt-5 border-t border-slate-800/80 text-center">
-            <a href="/" class="text-xs text-slate-400 hover:text-slate-200 transition inline-flex items-center gap-1.5">
+        <div class="mt-6 pt-5 border-t border-slate-800/80 text-center flex items-center justify-between text-xs text-slate-400">
+            <a href="/" class="hover:text-slate-200 transition inline-flex items-center gap-1.5">
                 <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 19l-7-7m0 0l7-7m-7 7h18"/></svg>
-                <span>العودة لشاشة تسجيل الحضور والانصراف</span>
+                <span>شاشة الحضور الرئيسية</span>
             </a>
+            <span class="text-[11px] text-slate-600 font-mono">v2.5 Enterprise</span>
         </div>
 
     </div>
 
+    <!-- Client Script -->
     <script>
+        let adminMediaStream = null;
+        const videoEl = document.getElementById("adminLoginWebcam");
+        const canvasEl = document.getElementById("adminLoginCanvas");
+        const alertBox = document.getElementById("authAlertBox");
+
+        function showAlert(msg, type = "error") {
+            alertBox.classList.remove("hidden", "bg-rose-500/10", "border-rose-500/30", "text-rose-300", "bg-emerald-500/10", "border-emerald-500/30", "text-emerald-300", "bg-amber-500/10", "border-amber-500/30", "text-amber-300");
+            
+            if (type === "success") {
+                alertBox.classList.add("bg-emerald-500/10", "border", "border-emerald-500/30", "text-emerald-300");
+            } else if (type === "warning") {
+                alertBox.classList.add("bg-amber-500/10", "border", "border-amber-500/30", "text-amber-300");
+            } else {
+                alertBox.classList.add("bg-rose-500/10", "border", "border-rose-500/30", "text-rose-300");
+            }
+            alertBox.innerHTML = msg;
+        }
+
+        function clearAlert() {
+            alertBox.classList.add("hidden");
+            alertBox.innerHTML = "";
+        }
+
+        function switchAuthTab(tab) {
+            clearAlert();
+            const btnFace = document.getElementById("tabBtnFace");
+            const btnPass = document.getElementById("tabBtnPassword");
+            const secFace = document.getElementById("sectionFaceAuth");
+            const secPass = document.getElementById("sectionPasswordAuth");
+
+            if (tab === "face") {
+                btnFace.className = "py-2.5 px-3 rounded-xl text-xs font-bold transition flex items-center justify-center gap-2 bg-blue-600 text-white shadow";
+                btnPass.className = "py-2.5 px-3 rounded-xl text-xs font-bold transition flex items-center justify-center gap-2 text-slate-400 hover:text-white";
+                secFace.classList.remove("hidden");
+                secPass.classList.add("hidden");
+                startAdminCamera();
+            } else {
+                btnPass.className = "py-2.5 px-3 rounded-xl text-xs font-bold transition flex items-center justify-center gap-2 bg-blue-600 text-white shadow";
+                btnFace.className = "py-2.5 px-3 rounded-xl text-xs font-bold transition flex items-center justify-center gap-2 text-slate-400 hover:text-white";
+                secPass.classList.remove("hidden");
+                secFace.classList.add("hidden");
+                stopAdminCamera();
+            }
+        }
+
+        async function startAdminCamera() {
+            if (adminMediaStream) return;
+            try {
+                const stream = await navigator.mediaDevices.getUserMedia({
+                    video: { width: { ideal: 640 }, height: { ideal: 480 } },
+                    audio: false
+                });
+                adminMediaStream = stream;
+                videoEl.srcObject = stream;
+                await videoEl.play();
+                document.getElementById("cameraUnavailableNotice").classList.add("hidden");
+            } catch (err) {
+                console.error("Camera access error:", err);
+                document.getElementById("cameraUnavailableNotice").classList.remove("hidden");
+            }
+        }
+
+        function stopAdminCamera() {
+            if (adminMediaStream) {
+                adminMediaStream.getTracks().forEach(track => track.stop());
+                adminMediaStream = null;
+            }
+        }
+
         function togglePasswordVisibility() {
             const input = document.getElementById("adminPasswordInput");
             input.type = input.type === "password" ? "text" : "password";
         }
 
-        async function handleAdminLogin(e) {
-            e.preventDefault();
-            const btn = document.getElementById("btnLoginSubmit");
-            const errBox = document.getElementById("loginErrorMsg");
-            const password = document.getElementById("adminPasswordInput").value;
+        async function captureAndVerifyAdminFace() {
+            clearAlert();
+            if (!videoEl || videoEl.videoWidth === 0) {
+                showAlert("الكاميرا غير جاهزة بعد، يرجى الانتظار ثانية ثم المحاولة.");
+                return;
+            }
+
+            const btn = document.getElementById("btnVerifyFaceAdmin");
+            const scanOverlay = document.getElementById("faceScanOverlay");
 
             btn.disabled = true;
-            btn.innerHTML = `<span class="inline-block animate-spin mr-2">⏳</span> جاري التحقق...`;
-            errBox.classList.add("hidden");
+            btn.innerHTML = `<span class="inline-block animate-spin mr-2">⏳</span> جاري فحص ومطابقة بصمة الوجه...`;
+            scanOverlay.classList.remove("hidden");
+
+            try {
+                canvasEl.width = videoEl.videoWidth;
+                canvasEl.height = videoEl.videoHeight;
+                const ctx = canvasEl.getContext("2d");
+                ctx.drawImage(videoEl, 0, 0, canvasEl.width, canvasEl.height);
+                const base64Image = canvasEl.toDataURL("image/jpeg", 0.90);
+
+                const res = await fetch("/api/admin/verify-face", {
+                    method: "POST",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify({ image: base64Image })
+                });
+
+                const data = await res.json();
+
+                if (res.ok && data.status === "GRANTED") {
+                    showAlert(data.message, "success");
+                    setTimeout(() => {
+                        window.location.href = data.redirect || "/admin";
+                    }, 800);
+                } else if (data.status === "UNKNOWN") {
+                    showAlert(data.message || "⛔ هذا الوجه غير مسجل في النظام إطلاقاً! لا يمكن الدخول إلا للمدراء المسجلين مسبقاً.", "error");
+                } else if (data.status === "NOT_ADMIN") {
+                    showAlert(data.message || "⛔ هذا الحساب مسجل لكنه لا يملك صلاحية مدير النظام.", "warning");
+                } else if (data.status === "NO_FACE") {
+                    showAlert("لم يتم العثور على وجه أمام الكاميرا. يرجى النظر مباشرة إلى العدسة.", "warning");
+                } else {
+                    showAlert(data.detail || data.message || "فشل التحقق من الهوية.", "error");
+                }
+            } catch (err) {
+                showAlert("حدث خطأ في الاتصال بالخادم، يرجى المحاولة لاحقاً.");
+            } finally {
+                btn.disabled = false;
+                btn.innerHTML = `<svg class="w-5 h-5 text-blue-200" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 13a3 3 0 11-6 0 3 3 0 016 0z"/><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 9a2 2 0 012-2h.93a2 2 0 001.664-.89l.812-1.22A2 2 0 0110.07 4h3.86a2 2 0 011.664.89l.812 1.22A2 2 0 0018.07 7H19a2 2 0 012 2v9a2 2 0 01-2 2H5a2 2 0 01-2-2V9z"/></svg> <span>التحقق من وجه المدير وتسجيل الدخول</span>`;
+                scanOverlay.classList.add("hidden");
+            }
+        }
+
+        async function handleAdminPasswordLogin(e) {
+            e.preventDefault();
+            clearAlert();
+            const identifier = document.getElementById("adminIdentifierInput").value.trim();
+            const password = document.getElementById("adminPasswordInput").value;
+            const btn = document.getElementById("btnPasswordSubmit");
+
+            btn.disabled = true;
+            btn.innerHTML = `<span class="inline-block animate-spin mr-2">⏳</span> جاري التحقق من الحساب وكلمة المرور...`;
 
             try {
                 const res = await fetch("/api/admin/login", {
                     method: "POST",
                     headers: { "Content-Type": "application/json" },
-                    body: JSON.stringify({ password: password })
+                    body: JSON.stringify({ identifier: identifier, password: password })
                 });
 
                 const data = await res.json();
                 if (res.ok && data.success) {
-                    window.location.href = data.redirect || "/admin";
+                    showAlert(`✅ تم التحقق بنجاح من هوية المدير (${data.user.name})! جاري نقلك للوحة الإدارة...`, "success");
+                    setTimeout(() => {
+                        window.location.href = data.redirect || "/admin";
+                    }, 700);
                 } else {
-                    errBox.innerText = data.detail || "كلمة المرور غير صحيحة، يرجى المحاولة مرة أخرى.";
-                    errBox.classList.remove("hidden");
+                    showAlert(data.detail || "تعذر التحقق من الحساب، تأكد من تسجيلك في النظام ومن كلمة المرور.", "error");
                 }
             } catch (err) {
-                errBox.innerText = "تعذر الاتصال بالخادم، يرجى التأكد من تشغيل النظام.";
-                errBox.classList.remove("hidden");
+                showAlert("حدث خطأ أثناء الاتصال بالخادم.", "error");
             } finally {
                 btn.disabled = false;
-                btn.innerHTML = `<span>تسجيل الدخول إلى لوحة الإدارة</span> <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M14 5l7 7m0 0l-7 7m7-7H3"/></svg>`;
+                btn.innerHTML = `<span>التحقق والدخول إلى لوحة الإدارة</span> <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M14 5l7 7m0 0l-7 7m7-7H3"/></svg>`;
             }
         }
+
+        // Initialize camera on page load
+        window.addEventListener("DOMContentLoaded", () => {
+            startAdminCamera();
+        });
+        window.addEventListener("beforeunload", () => {
+            stopAdminCamera();
+        });
     </script>
 </body>
 </html>

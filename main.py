@@ -73,19 +73,35 @@ chat_manager = ChatConnectionManager()
 
 # In-memory session store: token -> user_dict
 ACTIVE_SESSIONS = {}
-ACTIVE_ADMIN_TOKENS = set()
+
+def get_authenticated_admin(request: Request) -> Optional[Dict[str, Any]]:
+    """
+    التحقق الصارم من أن المستخدم مسجل في قاعدة البيانات ويمتلك صلاحية مدير النظام النشطة.
+    لا يمكن لأي مستخدم غير مسجل في النظام الوصول إلى لوحة الإدارة إطلاقاً.
+    """
+    # 1. فحص توكن جلسة الإدارة المعتمدة
+    admin_token = request.cookies.get("admin_session_token")
+    if admin_token:
+        user_info = ACTIVE_SESSIONS.get(admin_token) or db.get_session_user(admin_token)
+        if user_info and user_info.get("has_access"):
+            role = user_info.get("role", "").lower()
+            if "admin" in role or "مدير" in role:
+                return user_info
+
+    # 2. فحص توكن بصمة الوجه المعتمد
+    face_token = request.cookies.get("face_session_token")
+    if face_token:
+        user_info = ACTIVE_SESSIONS.get(face_token) or db.get_session_user(face_token)
+        if user_info and user_info.get("has_access"):
+            role = user_info.get("role", "").lower()
+            if "admin" in role or "مدير" in role:
+                return user_info
+
+    return None
 
 def is_admin_authenticated(request: Request) -> bool:
-    """التحقق من امتلاك المستخدم لصلاحية مدير النظام النشطة"""
-    token = request.cookies.get("admin_session_token")
-    if token and token in ACTIVE_ADMIN_TOKENS:
-        return True
-    user_token = request.cookies.get("face_session_token")
-    if user_token:
-        user_info = ACTIVE_SESSIONS.get(user_token) or db.get_session_user(user_token)
-        if user_info and ("admin" in user_info.get("role", "").lower() or "مدير" in user_info.get("role", "").lower()):
-            return True
-    return False
+    """التحقق هل يملك المستخدم جلسة إدارة صالحة لمستخدم مسجل بالفعل كمدير"""
+    return get_authenticated_admin(request) is not None
 
 class FaceVerifyRequest(BaseModel):
     image: str  # Base64 data URL
@@ -95,6 +111,7 @@ class PresenceCheckRequest(BaseModel):
     image: str
 
 class AdminLoginRequest(BaseModel):
+    identifier: str  # البريد الإلكتروني أو الاسم للمدير المسجل في النظام
     password: str
 
 class RegisterRequest(BaseModel):
@@ -140,28 +157,173 @@ async def admin_login_page(request: Request):
         return RedirectResponse(url="/admin", status_code=303)
     return templates.TemplateResponse(request=request, name="admin_login.html")
 
+@app.post("/api/admin/verify-face")
+async def admin_verify_face(data: FaceVerifyRequest):
+    """
+    تسجيل الدخول للوحة الإدارة ببصمة وجه المدير:
+    يجب أن يكون الوجه مسجلاً مسبقاً في النظام ومعه صلاحية مدير (Admin / مدير) ونشط.
+    إذا لم يكن مسجلاً، يتم الرفض فوراً وبشكل قاطع.
+    """
+    img = engine.decode_base64_image(data.image)
+    if img is None:
+        return JSONResponse(status_code=400, content={"status": "ERROR", "message": "فشل في قراءة صورة الكاميرا"})
+
+    embedding, face_box, status_msg = engine.extract_face_embedding(img)
+    if embedding is None:
+        return JSONResponse(status_code=200, content={"status": "NO_FACE", "message": status_msg})
+
+    registered_users = db.get_all_user_embeddings()
+    if not registered_users:
+        return JSONResponse(status_code=403, content={
+            "status": "DENIED",
+            "message": "لا يوجد أي مستخدمين مسجلين في النظام بعد. لا يمكن الدخول إلا لمستخدم مسجل كمدير."
+        })
+
+    matched_user, best_score, conf_pct = engine.identify_face(embedding, registered_users)
+
+    # 1. إذا كان الوجه غير مسجل في النظام إطلاقاً
+    if matched_user is None:
+        return JSONResponse(status_code=403, content={
+            "status": "UNKNOWN",
+            "message": "⛔ هذا الوجه غير مسجل في النظام! الدخول مخصص فقط للمدراء المسجلين مسبقاً."
+        })
+
+    # 2. التحقق من صلاحية الوصول
+    if not matched_user.get("has_access"):
+        return JSONResponse(status_code=403, content={
+            "status": "DENIED",
+            "message": f"⛔ تم التعرف على: {matched_user['name']} ولكن تم إيقاف صلاحية الدخول لهذا الحساب."
+        })
+
+    # 3. التحقق من رتبة المدير
+    role = matched_user.get("role", "").lower()
+    if not ("admin" in role or "مدير" in role):
+        return JSONResponse(status_code=403, content={
+            "status": "NOT_ADMIN",
+            "message": f"⛔ مرحباً {matched_user['name']}، ولكن حسابك مسجل كموظف عادي ولا يملك صلاحية مدير النظام."
+        })
+
+    # 4. إذا كان مديراً ومسجلاً وصلاحيته نشطة: يتم توليد جلسة إدارة حقيقية مربوطة بالـ user_id
+    admin_token = secrets.token_urlsafe(32)
+    db.create_session(admin_token, matched_user["id"])
+    ACTIVE_SESSIONS[admin_token] = {
+        "id": matched_user["id"],
+        "name": matched_user["name"],
+        "email": matched_user["email"],
+        "role": matched_user["role"],
+        "has_access": True,
+        "photo_url": matched_user["photo_path"],
+        "login_time": datetime.now().strftime("%Y-%m-%d %I:%M:%S %p")
+    }
+
+    db.log_access_attempt(
+        status="ADMIN_LOGIN_FACE",
+        user_id=matched_user["id"],
+        user_name=matched_user["name"],
+        confidence=conf_pct,
+        snapshot_path=None
+    )
+
+    response = JSONResponse(status_code=200, content={
+        "status": "GRANTED",
+        "success": True,
+        "message": f"✅ مرحباً بك يا مدير النظام ({matched_user['name']})! تم توثيق هويتك البيومترية بنجاح.",
+        "redirect": "/admin",
+        "user": {
+            "id": matched_user["id"],
+            "name": matched_user["name"],
+            "role": matched_user["role"],
+            "confidence": conf_pct
+        }
+    })
+    response.set_cookie(key="admin_session_token", value=admin_token, max_age=86400, path="/")
+    response.set_cookie(key="face_session_token", value=admin_token, max_age=86400, path="/")
+    return response
+
 @app.post("/api/admin/login")
 async def admin_login_api(data: AdminLoginRequest):
-    """التحقق من كلمة مرور مدير النظام وإنشاء جلسة إدارة"""
+    """
+    التحقق من هوية المدير المسجل في النظام وكلمة المرور:
+    يشترط أن يكون البريد الإلكتروني أو الاسم ينتمي لمستخدم مسجل بالفعل في جدول users ويملك رتبة مدير.
+    """
+    identifier = data.identifier.strip()
+    if not identifier:
+        raise HTTPException(status_code=400, detail="يرجى إدخال البريد الإلكتروني أو الاسم المسجل للمدير")
+
+    # 1. التحقق من وجود المستخدم في قاعدة البيانات
+    user = db.get_user_by_email_or_name(identifier)
+    if user is None:
+        raise HTTPException(
+            status_code=403, 
+            detail="⛔ هذا الحساب غير مسجل في النظام إطلاقاً! لا يمكن الدخول إلا للمستخدمين المسجلين مسبقاً كمدراء."
+        )
+
+    # 2. التحقق من رتبة المدير
+    role = user.get("role", "").lower()
+    if not ("admin" in role or "مدير" in role):
+        raise HTTPException(
+            status_code=403, 
+            detail=f"⛔ المستخدم '{user['name']}' مسجل، ولكنه لا يملك صلاحية مدير النظام (رتبته: {user.get('role')})."
+        )
+
+    # 3. التحقق من حالة الصلاحية
+    if not user.get("has_access"):
+        raise HTTPException(status_code=403, detail="⛔ تم تعطيل صلاحية الدخول لهذا الحساب من قبل الإدارة.")
+
+    # 4. التحقق من كلمة المرور
     current_pwd = db.get_admin_password()
-    if data.password.strip() == current_pwd:
-        admin_token = secrets.token_urlsafe(32)
-        ACTIVE_ADMIN_TOKENS.add(admin_token)
-        response = JSONResponse(content={"success": True, "redirect": "/admin"})
-        response.set_cookie(key="admin_session_token", value=admin_token, max_age=86400, path="/")
-        return response
-    else:
-        raise HTTPException(status_code=401, detail="كلمة المرور غير صحيحة")
+    if data.password.strip() != current_pwd:
+        raise HTTPException(status_code=401, detail="كلمة مرور الإدارة غير صحيحة")
+
+    # 5. إنشاء جلسة معتمدة مربوطة بـ user_id الحقيقي في قاعدة البيانات
+    admin_token = secrets.token_urlsafe(32)
+    db.create_session(admin_token, user["id"])
+    ACTIVE_SESSIONS[admin_token] = {
+        "id": user["id"],
+        "name": user["name"],
+        "email": user["email"],
+        "role": user["role"],
+        "has_access": True,
+        "photo_url": user["photo_path"],
+        "login_time": datetime.now().strftime("%Y-%m-%d %I:%M:%S %p")
+    }
+
+    db.log_access_attempt(
+        status="ADMIN_LOGIN_PASSWORD",
+        user_id=user["id"],
+        user_name=user["name"],
+        confidence=100.0,
+        snapshot_path=None
+    )
+
+    response = JSONResponse(content={
+        "success": True, 
+        "redirect": "/admin",
+        "user": {
+            "id": user["id"],
+            "name": user["name"],
+            "role": user["role"]
+        }
+    })
+    response.set_cookie(key="admin_session_token", value=admin_token, max_age=86400, path="/")
+    response.set_cookie(key="face_session_token", value=admin_token, max_age=86400, path="/")
+    return response
 
 @app.get("/admin/logout")
 @app.post("/api/admin/logout")
 async def admin_logout_api(request: Request):
-    """تسجيل الخروج من لوحة الإدارة"""
+    """تسجيل الخروج من لوحة الإدارة وإنهاء الجلسة"""
     token = request.cookies.get("admin_session_token")
-    if token and token in ACTIVE_ADMIN_TOKENS:
-        ACTIVE_ADMIN_TOKENS.remove(token)
-    response = RedirectResponse(url="/", status_code=303)
+    if token:
+        db.delete_session(token)
+        ACTIVE_SESSIONS.pop(token, None)
+    face_token = request.cookies.get("face_session_token")
+    if face_token:
+        db.delete_session(face_token)
+        ACTIVE_SESSIONS.pop(face_token, None)
+    response = RedirectResponse(url="/admin/login", status_code=303)
     response.delete_cookie(key="admin_session_token", path="/")
+    response.delete_cookie(key="face_session_token", path="/")
     return response
 
 @app.post("/api/admin/change-password")
@@ -180,7 +342,8 @@ async def change_admin_password(request: Request, old_password: str = Form(...),
 @app.get("/admin", response_class=HTMLResponse)
 async def admin_panel(request: Request):
     """لوحة الإدارة والتحكم الشاملة - مخصصة حصرياً للمدير لإضافة الأعضاء وإدارة النظام"""
-    if not is_admin_authenticated(request):
+    admin_user = get_authenticated_admin(request)
+    if not admin_user:
         return RedirectResponse(url="/admin/login", status_code=303)
     
     users = db.get_all_users()
@@ -194,6 +357,7 @@ async def admin_panel(request: Request):
         request=request,
         name="admin.html",
         context={
+            "current_admin": admin_user,
             "users": users,
             "attendance": attendance,
             "total_users": len(users),
@@ -415,8 +579,6 @@ async def verify_face(data: FaceVerifyRequest):
     )
 
     is_admin = bool("admin" in user_role.lower() or "مدير" in user_role.lower())
-    if is_admin:
-        ACTIVE_ADMIN_TOKENS.add(session_token)
 
     response = JSONResponse(status_code=200, content={
         "status": "GRANTED",

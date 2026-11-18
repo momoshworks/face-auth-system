@@ -183,6 +183,22 @@ def get_user_by_id(user_id: int) -> Optional[Dict[str, Any]]:
     finally:
         conn.close()
 
+def get_user_by_email_or_name(identifier: str) -> Optional[Dict[str, Any]]:
+    """البحث عن مستخدم مسجل بالبريد الإلكتروني أو الاسم للتحقق من هويته وصلاحياته"""
+    conn = get_connection()
+    try:
+        cursor = conn.cursor()
+        val = identifier.strip().lower()
+        cursor.execute("""
+            SELECT id, name, email, role, has_access, photo_path, notes, created_at 
+            FROM users 
+            WHERE LOWER(TRIM(email)) = ? OR LOWER(TRIM(name)) = ?
+        """, (val, val))
+        row = cursor.fetchone()
+        return dict(row) if row else None
+    finally:
+        conn.close()
+
 def get_all_user_embeddings() -> List[Dict[str, Any]]:
     conn = get_connection()
     try:
