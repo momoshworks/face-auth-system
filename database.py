@@ -97,8 +97,40 @@ def init_db():
                 FOREIGN KEY(uploaded_by_id) REFERENCES users(id) ON DELETE SET NULL
             );
             """)
+
+            # جدول إعدادات النظام وكلمة مرور لوحة الإدارة
+            cursor.execute("""
+            CREATE TABLE IF NOT EXISTS system_settings (
+                key TEXT PRIMARY KEY,
+                value TEXT NOT NULL
+            );
+            """)
+            cursor.execute("INSERT OR IGNORE INTO system_settings (key, value) VALUES ('admin_password', 'admin123');")
             
             conn.commit()
+        finally:
+            conn.close()
+
+def get_admin_password() -> str:
+    """الحصول على كلمة مرور لوحة الإدارة الحالية"""
+    conn = get_connection()
+    try:
+        cursor = conn.cursor()
+        cursor.execute("SELECT value FROM system_settings WHERE key = 'admin_password'")
+        row = cursor.fetchone()
+        return row["value"] if row else "admin123"
+    finally:
+        conn.close()
+
+def set_admin_password(new_password: str) -> bool:
+    """تحديث كلمة مرور لوحة الإدارة"""
+    with DB_LOCK:
+        conn = get_connection()
+        try:
+            cursor = conn.cursor()
+            cursor.execute("INSERT OR REPLACE INTO system_settings (key, value) VALUES ('admin_password', ?)", (new_password,))
+            conn.commit()
+            return True
         finally:
             conn.close()
 

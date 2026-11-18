@@ -73,6 +73,19 @@ chat_manager = ChatConnectionManager()
 
 # In-memory session store: token -> user_dict
 ACTIVE_SESSIONS = {}
+ACTIVE_ADMIN_TOKENS = set()
+
+def is_admin_authenticated(request: Request) -> bool:
+    """التحقق من امتلاك المستخدم لصلاحية مدير النظام النشطة"""
+    token = request.cookies.get("admin_session_token")
+    if token and token in ACTIVE_ADMIN_TOKENS:
+        return True
+    user_token = request.cookies.get("face_session_token")
+    if user_token:
+        user_info = ACTIVE_SESSIONS.get(user_token) or db.get_session_user(user_token)
+        if user_info and ("admin" in user_info.get("role", "").lower() or "مدير" in user_info.get("role", "").lower()):
+            return True
+    return False
 
 class FaceVerifyRequest(BaseModel):
     image: str  # Base64 data URL
@@ -80,6 +93,9 @@ class FaceVerifyRequest(BaseModel):
 class PresenceCheckRequest(BaseModel):
     token: str
     image: str
+
+class AdminLoginRequest(BaseModel):
+    password: str
 
 class RegisterRequest(BaseModel):
     name: str
@@ -101,30 +117,102 @@ async def get_network_info():
 
 @app.get("/", response_class=HTMLResponse)
 async def home_page(request: Request):
-    """الصفحة الرئيسية لنظام التعرف على الوجه المخصص للحاسوب"""
-    users = db.get_all_users()
-    logs = db.get_recent_logs(20)
+    """شاشة تسجيل الحضور والانصراف الرئيسية المخصصة للكمبيوتر (Kiosk Mode)"""
     attendance = db.get_daily_attendance()
-    present_today = sum(1 for a in attendance if a["is_present"])
+    present_today = [a for a in attendance if a["is_present"]]
+    total_users = len(attendance)
+    is_admin = is_admin_authenticated(request)
     return templates.TemplateResponse(
         request=request,
         name="index.html",
         context={
+            "total_users": total_users,
+            "present_count": len(present_today),
+            "recent_checkins": present_today,
+            "is_admin": is_admin
+        }
+    )
+
+@app.get("/admin/login", response_class=HTMLResponse)
+async def admin_login_page(request: Request):
+    """صفحة تسجيل الدخول للوحة الإدارة"""
+    if is_admin_authenticated(request):
+        return RedirectResponse(url="/admin", status_code=303)
+    return templates.TemplateResponse(request=request, name="admin_login.html")
+
+@app.post("/api/admin/login")
+async def admin_login_api(data: AdminLoginRequest):
+    """التحقق من كلمة مرور مدير النظام وإنشاء جلسة إدارة"""
+    current_pwd = db.get_admin_password()
+    if data.password.strip() == current_pwd:
+        admin_token = secrets.token_urlsafe(32)
+        ACTIVE_ADMIN_TOKENS.add(admin_token)
+        response = JSONResponse(content={"success": True, "redirect": "/admin"})
+        response.set_cookie(key="admin_session_token", value=admin_token, max_age=86400, path="/")
+        return response
+    else:
+        raise HTTPException(status_code=401, detail="كلمة المرور غير صحيحة")
+
+@app.get("/admin/logout")
+@app.post("/api/admin/logout")
+async def admin_logout_api(request: Request):
+    """تسجيل الخروج من لوحة الإدارة"""
+    token = request.cookies.get("admin_session_token")
+    if token and token in ACTIVE_ADMIN_TOKENS:
+        ACTIVE_ADMIN_TOKENS.remove(token)
+    response = RedirectResponse(url="/", status_code=303)
+    response.delete_cookie(key="admin_session_token", path="/")
+    return response
+
+@app.post("/api/admin/change-password")
+async def change_admin_password(request: Request, old_password: str = Form(...), new_password: str = Form(...)):
+    """تغيير كلمة مرور الإدارة"""
+    if not is_admin_authenticated(request):
+        raise HTTPException(status_code=403, detail="هذه العملية مخصصة لمدير النظام فقط")
+    curr = db.get_admin_password()
+    if old_password.strip() != curr:
+        raise HTTPException(status_code=400, detail="كلمة المرور الحالية غير صحيحة")
+    if len(new_password.strip()) < 4:
+        raise HTTPException(status_code=400, detail="كلمة المرور الجديدة يجب أن تكون 4 أحرف على الأقل")
+    db.set_admin_password(new_password.strip())
+    return {"success": True, "message": "تم تغيير كلمة مرور الإدارة بنجاح"}
+
+@app.get("/admin", response_class=HTMLResponse)
+async def admin_panel(request: Request):
+    """لوحة الإدارة والتحكم الشاملة - مخصصة حصرياً للمدير لإضافة الأعضاء وإدارة النظام"""
+    if not is_admin_authenticated(request):
+        return RedirectResponse(url="/admin/login", status_code=303)
+    
+    users = db.get_all_users()
+    attendance = db.get_daily_attendance()
+    present_count = sum(1 for a in attendance if a["is_present"])
+    absent_count = len(attendance) - present_count
+    attendance_rate = round((present_count / len(attendance) * 100), 1) if attendance else 0
+    logs = db.get_recent_logs(50)
+    
+    return templates.TemplateResponse(
+        request=request,
+        name="admin.html",
+        context={
             "users": users,
-            "logs": logs,
             "attendance": attendance,
             "total_users": len(users),
-            "active_access_count": sum(1 for u in users if u["has_access"] == 1),
-            "present_today": present_today
+            "present_count": present_count,
+            "absent_count": absent_count,
+            "attendance_rate": attendance_rate,
+            "logs": logs,
+            "today_date": datetime.now().strftime("%Y-%m-%d")
         }
     )
 
 @app.post("/api/register")
-async def register_user(data: RegisterRequest):
+async def register_user(request: Request, data: RegisterRequest):
     """
-    تسجيل شخص جديد واستخراج بصمة الوجه وحفظ الملف الشخصي.
-    يدعم التقاط زوايا متعددة (Center, Right, Left, Up, Down) لرفع دقة التعرف.
+    تسجيل عضو / موظف جديد واستخراج بصمة الوجه وحفظ الملف الشخصي.
+    متاح فقط لمدير النظام من لوحة الإدارة (Admin Panel).
     """
+    if not is_admin_authenticated(request):
+        raise HTTPException(status_code=403, detail="عفواً، تسجيل وإضافة الموظفين مسموح لمدير النظام فقط من لوحة الإدارة.")
     name = data.name.strip()
     email = data.email.strip()
     role = data.role.strip()
@@ -326,23 +414,33 @@ async def verify_face(data: FaceVerifyRequest):
         snapshot_path=snap_url
     )
 
+    is_admin = bool("admin" in user_role.lower() or "مدير" in user_role.lower())
+    if is_admin:
+        ACTIVE_ADMIN_TOKENS.add(session_token)
+
     response = JSONResponse(status_code=200, content={
         "status": "GRANTED",
-        "message": f"✅ مرحباً بك {user_name}! تم التحقق من الهوية ومنح الإذن بالدخول.",
+        "message": f"مرحباً بك {user_name}! تم تسجيل الحضور وتوثيق الهوية بنجاح.",
         "user": {
             "id": user_id,
             "name": user_name,
             "role": user_role,
             "has_access": True,
-            "photo_url": matched_user["photo_path"]
+            "photo_url": matched_user["photo_path"],
+            "is_admin": is_admin
         },
+        "is_admin": is_admin,
         "confidence": conf_pct,
         "face_box": face_box,
         "token": session_token,
-        "redirect_url": f"/portal?token={session_token}"
+        "checkin_time": datetime.now().strftime("%I:%M:%S %p"),
+        "portal_url": f"/portal?token={session_token}",
+        "admin_url": "/admin" if is_admin else None
     })
     # تخزين التوكن في الكوكيز ليعمل الموقع المحمي حتى لو تم فتح /portal مباشرة
     response.set_cookie(key="face_session_token", value=session_token, max_age=86400, path="/")
+    if is_admin:
+        response.set_cookie(key="admin_session_token", value=session_token, max_age=86400, path="/")
     return response
 
 @app.get("/portal", response_class=HTMLResponse)
@@ -641,16 +739,20 @@ async def list_users():
     return db.get_all_users()
 
 @app.post("/api/users/{user_id}/toggle-access")
-async def toggle_access(user_id: int):
-    """تبديل حالة الصلاحية (منح أو سحب الإذن بالدخول)"""
+async def toggle_access(user_id: int, request: Request):
+    """تبديل حالة الصلاحية (منح أو سحب الإذن بالدخول) - للإدارة فقط"""
+    if not is_admin_authenticated(request):
+        raise HTTPException(status_code=403, detail="تعديل الصلاحيات مخصص لمدير النظام فقط")
     new_status = db.toggle_user_access(user_id)
     if new_status is None:
         raise HTTPException(status_code=404, detail="المستخدم غير موجود")
     return {"success": True, "has_access": new_status}
 
 @app.delete("/api/users/{user_id}")
-async def remove_user(user_id: int):
-    """حذف مستخدم من النظام"""
+async def remove_user(user_id: int, request: Request):
+    """حذف مستخدم من النظام - للإدارة فقط"""
+    if not is_admin_authenticated(request):
+        raise HTTPException(status_code=403, detail="حذف الموظفين مخصص لمدير النظام فقط")
     success = db.delete_user(user_id)
     if not success:
         raise HTTPException(status_code=404, detail="المستخدم غير موجود")
